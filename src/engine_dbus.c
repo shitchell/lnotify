@@ -4,11 +4,8 @@
 #include "log.h"
 
 #include <errno.h>
-#include <fcntl.h>
 #include <stdbool.h>
 #include <stdint.h>
-#include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 #include <sys/types.h>
 #include <sys/wait.h>
@@ -53,264 +50,130 @@ static engine_detect_result dbus_detect(session_context *ctx) {
 }
 
 // -------------------------------------------------------------------
-//  Helpers for gdbus command construction
+//  dbus_call_as_user() — run a callback on a user's session bus
 // -------------------------------------------------------------------
 
-// Shell-escape a string for use inside single quotes. Returns a
-// heap-allocated string that the caller must free.
-// Strategy: replace each ' with '\'' (end quote, escaped quote, reopen quote).
-static char *shell_escape(const char *s) {
-    if (!s) return strdup("''");
-
-    // Count single quotes to determine buffer size
-    size_t len = 0;
-    size_t quotes = 0;
-    for (const char *p = s; *p; p++) {
-        len++;
-        if (*p == '\'') quotes++;
-    }
-
-    // Escaped form: 'text' but each ' becomes '\'' (4 chars replacing 1)
-    // Result: opening ' + body + closing '
-    size_t out_len = 2 + len + quotes * 3 + 1;  // 2 for outer quotes
-    char *out = malloc(out_len);
-    if (!out) return NULL;
-
-    char *wp = out;
-    *wp++ = '\'';
-    for (const char *p = s; *p; p++) {
-        if (*p == '\'') {
-            *wp++ = '\'';  // end current quote
-            *wp++ = '\\';
-            *wp++ = '\'';  // escaped literal quote
-            *wp++ = '\'';  // reopen quote
-        } else {
-            *wp++ = *p;
-        }
-    }
-    *wp++ = '\'';
-    *wp = '\0';
-
-    return out;
-}
-
-// Build the gdbus call command string. Returns a heap-allocated string.
-// The caller must free it.
-static char *build_gdbus_command(const char *title, const char *body,
-                                  int32_t timeout_ms) {
-    char *escaped_title = shell_escape(title ? title : "");
-    char *escaped_body  = shell_escape(body ? body : "");
-    if (!escaped_title || !escaped_body) {
-        free(escaped_title);
-        free(escaped_body);
-        return NULL;
-    }
-
-    // gdbus call --session --dest org.freedesktop.Notifications
-    //   --object-path /org/freedesktop/Notifications
-    //   --method org.freedesktop.Notifications.Notify
-    //   "lnotify" 0 "" "TITLE" "BODY" [] {} TIMEOUT
-    //
-    // String args to gdbus are unquoted (gdbus parses them as GVariant text).
-    // We shell-escape and let the shell pass them as argv.
-    size_t cmd_len = 512 + strlen(escaped_title) + strlen(escaped_body);
-    char *cmd = malloc(cmd_len);
-    if (!cmd) {
-        free(escaped_title);
-        free(escaped_body);
-        return NULL;
-    }
-
-    int timeout = timeout_ms > 0 ? timeout_ms : 5000;
-
-    snprintf(cmd, cmd_len,
-             "gdbus call --session "
-             "--dest org.freedesktop.Notifications "
-             "--object-path /org/freedesktop/Notifications "
-             "--method org.freedesktop.Notifications.Notify "
-             "'lnotify' 0 '' %s %s '[]' '{}' %d "
-             ">/dev/null 2>&1",
-             escaped_title, escaped_body, timeout);
-
-    free(escaped_title);
-    free(escaped_body);
-    return cmd;
-}
-
-// -------------------------------------------------------------------
-//  D-Bus session bus address discovery for cross-user delivery
-// -------------------------------------------------------------------
-
-// Try to read DBUS_SESSION_BUS_ADDRESS from /proc/{pid}/environ.
-// Returns a heap-allocated string or NULL.
-static char *get_dbus_addr_from_proc(uint32_t target_uid) {
-    // Find a process owned by this uid that has the env var.
-    // Strategy: scan /proc for processes owned by uid, check environ.
-    // We use loginctl to find the session leader pid instead.
-    char cmd[256];
-    snprintf(cmd, sizeof(cmd),
-             "loginctl show-user %u -p Sessions --value 2>/dev/null",
-             target_uid);
-
-    FILE *fp = popen(cmd, "r");
-    if (!fp) return NULL;
-
-    char sessions[512] = {0};
-    if (!fgets(sessions, sizeof(sessions), fp)) {
-        pclose(fp);
-        return NULL;
-    }
-    pclose(fp);
-
-    // sessions is a space-separated list of session IDs
-    // For each, get the Leader PID and check its environ
-    char *saveptr = NULL;
-    char *sid = strtok_r(sessions, " \t\n", &saveptr);
-    while (sid) {
-        char pcmd[256];
-        snprintf(pcmd, sizeof(pcmd),
-                 "loginctl show-session %s -p Leader --value 2>/dev/null", sid);
-        fp = popen(pcmd, "r");
-        if (!fp) { sid = strtok_r(NULL, " \t\n", &saveptr); continue; }
-
-        char pid_str[32] = {0};
-        if (!fgets(pid_str, sizeof(pid_str), fp)) {
-            pclose(fp);
-            sid = strtok_r(NULL, " \t\n", &saveptr);
-            continue;
-        }
-        pclose(fp);
-
-        int leader_pid = atoi(pid_str);
-        if (leader_pid <= 0) {
-            sid = strtok_r(NULL, " \t\n", &saveptr);
-            continue;
-        }
-
-        // Read /proc/{pid}/environ (NUL-separated key=value pairs)
-        char env_path[64];
-        snprintf(env_path, sizeof(env_path), "/proc/%d/environ", leader_pid);
-
-        int fd = open(env_path, O_RDONLY);
-        if (fd < 0) {
-            sid = strtok_r(NULL, " \t\n", &saveptr);
-            continue;
-        }
-
-        // Read in chunks, search for DBUS_SESSION_BUS_ADDRESS=
-        char buf[8192];
-        ssize_t nread = read(fd, buf, sizeof(buf) - 1);
-        close(fd);
-
-        if (nread <= 0) {
-            sid = strtok_r(NULL, " \t\n", &saveptr);
-            continue;
-        }
-        buf[nread] = '\0';
-
-        // Scan NUL-separated entries
-        const char *needle = "DBUS_SESSION_BUS_ADDRESS=";
-        size_t needle_len = strlen(needle);
-        const char *p = buf;
-        const char *end = buf + nread;
-        while (p < end) {
-            size_t entry_len = strlen(p);
-            if (entry_len > needle_len &&
-                strncmp(p, needle, needle_len) == 0) {
-                char *addr = strdup(p + needle_len);
-                return addr;
-            }
-            p += entry_len + 1;  // skip past NUL
-        }
-
-        sid = strtok_r(NULL, " \t\n", &saveptr);
-    }
-
-    // Fallback: standard XDG path
-    char fallback[128];
-    snprintf(fallback, sizeof(fallback),
-             "unix:path=/run/user/%u/bus", target_uid);
-    return strdup(fallback);
-}
-
-// -------------------------------------------------------------------
-//  Run a command on a user's D-Bus session (single attempt)
-// -------------------------------------------------------------------
-
-// Execute cmd as target_uid with their DBUS_SESSION_BUS_ADDRESS set.
-// If caller is already target_uid, runs directly via system().
-// Otherwise fork+setresuid. Returns 0 on success, non-zero on failure.
-int dbus_run_as_user(const char *cmd, uint32_t target_uid) {
+int dbus_call_as_user(uint32_t target_uid, dbus_user_fn fn, void *userdata) {
     uid_t my_uid = getuid();
 
     if ((uint32_t)my_uid == target_uid) {
-        // Same user — run directly
-        return system(cmd);
+        // Same user — open bus directly
+        sd_bus *bus = NULL;
+        int r = sd_bus_open_user(&bus);
+        if (r < 0) return r;
+        r = fn(bus, userdata);
+        sd_bus_unref(bus);
+        return r;
     }
 
-    // Cross-user — fork, become target user, exec
-    char *dbus_addr = get_dbus_addr_from_proc(target_uid);
-    log_debug("dbus_run_as_user: target uid=%u, DBUS_SESSION_BUS_ADDRESS=%s",
-              target_uid, dbus_addr ? dbus_addr : "(null)");
-
+    // Cross-user — fork, become target user, open their bus
     pid_t pid = fork();
 
     if (pid < 0) {
-        log_error("dbus_run_as_user: fork failed: %s", strerror(errno));
-        free(dbus_addr);
+        log_error("dbus_call_as_user: fork failed: %s", strerror(errno));
         return -1;
     }
 
     if (pid == 0) {
         // Child: become the target user
+        char xdg[64];
+        snprintf(xdg, sizeof(xdg), "/run/user/%u", target_uid);
+        setenv("XDG_RUNTIME_DIR", xdg, 1);
+
         // Set GID before UID (required order)
-        gid_t target_gid = (gid_t)target_uid;
-        if (setresgid(target_gid, target_gid, target_gid) < 0) {
-            _exit(127);
-        }
-        if (setresuid((uid_t)target_uid, (uid_t)target_uid,
-                      (uid_t)target_uid) < 0) {
-            _exit(127);
-        }
+        if (setresgid(target_uid, target_uid, target_uid) < 0) _exit(127);
+        if (setresuid(target_uid, target_uid, target_uid) < 0) _exit(127);
 
-        // Set D-Bus session bus address
-        if (dbus_addr) {
-            setenv("DBUS_SESSION_BUS_ADDRESS", dbus_addr, 1);
-        }
+        sd_bus *bus = NULL;
+        if (sd_bus_open_user(&bus) < 0) _exit(1);
 
-        // Set XDG_RUNTIME_DIR (needed for session bus access)
-        char xdg_dir[64];
-        snprintf(xdg_dir, sizeof(xdg_dir), "/run/user/%u", target_uid);
-        setenv("XDG_RUNTIME_DIR", xdg_dir, 1);
-
-        execl("/bin/sh", "sh", "-c", cmd, (char *)NULL);
-        _exit(127);
+        int rc = fn(bus, userdata);
+        sd_bus_unref(bus);
+        _exit(rc < 0 ? 1 : 0);
     }
 
     // Parent: wait for child
-    free(dbus_addr);
     int status;
     if (waitpid(pid, &status, 0) < 0) {
-        log_error("dbus_run_as_user: waitpid failed: %s", strerror(errno));
+        log_error("dbus_call_as_user: waitpid failed: %s", strerror(errno));
         return -1;
     }
 
     if (WIFEXITED(status)) {
-        return WEXITSTATUS(status);
+        int exit_code = WEXITSTATUS(status);
+        return exit_code == 0 ? 0 : -1;
     }
     return -1;
+}
+
+// -------------------------------------------------------------------
+//  send_notification callback
+// -------------------------------------------------------------------
+
+typedef struct {
+    const char *title;
+    const char *body;
+    int32_t timeout_ms;
+} dbus_notify_args;
+
+static int send_notification(sd_bus *bus, void *userdata) {
+    dbus_notify_args *args = userdata;
+    sd_bus_error error = SD_BUS_ERROR_NULL;
+    sd_bus_message *reply = NULL;
+
+    // Build Notify message manually (signature "susssasa{sv}i")
+    // Need low-level API for empty arrays
+    sd_bus_message *m = NULL;
+    int r = sd_bus_message_new_method_call(bus, &m,
+        "org.freedesktop.Notifications",
+        "/org/freedesktop/Notifications",
+        "org.freedesktop.Notifications",
+        "Notify");
+    if (r < 0) return r;
+
+    r = sd_bus_message_append(m, "susss",
+        "lnotify",                              // app_name
+        (uint32_t)0,                            // replaces_id
+        "",                                     // app_icon
+        args->title ? args->title : "",         // summary
+        args->body ? args->body : "");          // body
+    if (r < 0) { sd_bus_message_unref(m); return r; }
+
+    // Empty actions array: as
+    r = sd_bus_message_open_container(m, 'a', "s");
+    if (r < 0) { sd_bus_message_unref(m); return r; }
+    r = sd_bus_message_close_container(m);
+    if (r < 0) { sd_bus_message_unref(m); return r; }
+
+    // Empty hints dict: a{sv}
+    r = sd_bus_message_open_container(m, 'a', "{sv}");
+    if (r < 0) { sd_bus_message_unref(m); return r; }
+    r = sd_bus_message_close_container(m);
+    if (r < 0) { sd_bus_message_unref(m); return r; }
+
+    // Timeout
+    int32_t timeout = args->timeout_ms > 0 ? args->timeout_ms : 5000;
+    r = sd_bus_message_append(m, "i", timeout);
+    if (r < 0) { sd_bus_message_unref(m); return r; }
+
+    r = sd_bus_call(bus, m, 0, &error, &reply);
+    sd_bus_message_unref(m);
+    sd_bus_message_unref(reply);
+    sd_bus_error_free(&error);
+    return r;
 }
 
 // -------------------------------------------------------------------
 //  Execute with retry
 // -------------------------------------------------------------------
 
-static bool dbus_exec_with_retry(const char *cmd, uint32_t target_uid) {
+static bool dbus_exec_with_retry(uint32_t target_uid, dbus_user_fn fn,
+                                 void *userdata) {
     int delay_ms = DBUS_RETRY_BASE_MS;
 
     for (int attempt = 1; attempt <= DBUS_RETRY_MAX_ATTEMPTS; attempt++) {
-        int rc = dbus_run_as_user(cmd, target_uid);
-        if (rc == 0) {
+        int rc = dbus_call_as_user(target_uid, fn, userdata);
+        if (rc >= 0) {
             log_debug("engine_dbus: succeeded on attempt %d (uid=%u)",
                       attempt, target_uid);
             return true;
@@ -336,15 +199,13 @@ static bool dbus_exec_with_retry(const char *cmd, uint32_t target_uid) {
 
 static bool dbus_render(const notification *notif,
                          const session_context *ctx) {
-    char *gdbus_cmd = build_gdbus_command(notif->title, notif->body,
-                                           notif->timeout_ms);
-    if (!gdbus_cmd) {
-        log_error("engine_dbus: failed to build gdbus command");
-        return false;
-    }
+    dbus_notify_args args = {
+        .title = notif->title,
+        .body = notif->body,
+        .timeout_ms = notif->timeout_ms,
+    };
 
-    bool success = dbus_exec_with_retry(gdbus_cmd, ctx->uid);
-    free(gdbus_cmd);
+    bool success = dbus_exec_with_retry(ctx->uid, send_notification, &args);
 
     if (success) {
         log_info("engine_dbus: notification delivered via D-Bus");

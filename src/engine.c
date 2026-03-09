@@ -5,6 +5,7 @@
 
 #include <stdlib.h>
 #include <string.h>
+#include <systemd/sd-bus.h>
 #include <unistd.h>
 
 // ---------------------------------------------------------------------------
@@ -75,17 +76,25 @@ void context_free(session_context *ctx) {
 // Probe implementations
 // ---------------------------------------------------------------------------
 
+// Callback for D-Bus notification service probe
+static int introspect_notifications(sd_bus *bus, void *userdata) {
+    (void)userdata;
+    sd_bus_error error = SD_BUS_ERROR_NULL;
+    sd_bus_message *reply = NULL;
+    int r = sd_bus_call_method(bus,
+        "org.freedesktop.Notifications",
+        "/org/freedesktop/Notifications",
+        "org.freedesktop.DBus.Introspectable",
+        "Introspect",
+        &error, &reply, "");
+    sd_bus_message_unref(reply);
+    sd_bus_error_free(&error);
+    return r;
+}
+
 static void probe_has_dbus_notifications(session_context *ctx) {
-    // Introspect the Notifications interface on the target user's session bus.
-    // Uses dbus_run_as_user() to handle cross-user (e.g. root daemon probing
-    // a regular user's D-Bus session).
-    int rc = dbus_run_as_user(
-        "gdbus introspect --session "
-        "--dest org.freedesktop.Notifications "
-        "--object-path /org/freedesktop/Notifications "
-        ">/dev/null 2>&1",
-        ctx->uid);
-    ctx->has_dbus_notifications = (rc == 0);
+    int rc = dbus_call_as_user(ctx->uid, introspect_notifications, NULL);
+    ctx->has_dbus_notifications = (rc >= 0);
     log_debug("probe: has_dbus_notifications = %d", ctx->has_dbus_notifications);
 }
 
