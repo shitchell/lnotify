@@ -13,6 +13,11 @@ Universal Linux toast notification system. Three components:
 - **`lnotify`** — thin CLI client (fire-and-forget over Unix socket)
 - **D-Bus listener** — optional component inside daemon for `notify-send` compatibility
 
+## Dependencies
+
+- `libsystemd-dev` — sd-bus API for D-Bus communication with logind and notification services
+- `pkg-config` — build-time dependency resolution
+
 ## Component Diagram
 
 ```
@@ -131,8 +136,10 @@ _All files implemented. v1 complete._
 | `include/engine_fb.h` | Framebuffer engine header (exports `engine_framebuffer`) | [exists] |
 | `src/engine_fb.c` | Framebuffer engine: detect, render, dismiss with defense thread | [exists] |
 | `tests/manual/test_fb.sh` | Manual framebuffer test instructions (requires raw TTY) | [exists] |
-| `include/engine_dbus.h` | D-Bus engine header (exports `engine_dbus`, `dbus_run_as_user()`) | [exists] |
-| `src/engine_dbus.c` | D-Bus engine: detect, render via gdbus, shared `dbus_run_as_user()` for cross-user execution | [exists] |
+| `include/engine_dbus.h` | D-Bus engine header (exports `engine_dbus`, `dbus_call_as_user()` callback API) | [exists] |
+| `src/engine_dbus.c` | D-Bus engine: detect, render via sd-bus, shared `dbus_call_as_user()` for cross-user execution | [exists] |
+| `include/logind.h` | logind module header: session struct, VT lookup, remote session listing | [exists] |
+| `src/logind.c` | logind module: sd-bus calls to org.freedesktop.login1 (system bus) | [exists] |
 | `tests/manual/test_dbus.sh` | Manual D-Bus test instructions (requires GUI session) | [exists] |
 | `tests/manual/test_vt.sh` | Manual VT switch monitor test (requires root, multiple VTs) | [exists] |
 | `include/engine_queue.h` | Queue engine header (exports `engine_queue`) | [exists] |
@@ -153,7 +160,7 @@ _All files implemented. v1 complete._
 
 **Task 4 complete:** Config parser with `#RRGGBBAA` color support and all v1 config keys. Key=value flat file format, `#` comments, whitespace-tolerant. `config_defaults()` populates all fields from design spec defaults. `config_load()` overrides from file, skipping malformed/unknown lines (logged at debug). `config_free()` cleans up heap strings. 48 config tests pass covering defaults, file parsing, color edge cases, whitespace handling, and boolean parsing.
 
-**Task 5 complete:** Engine vtable (`engine` struct with detect/render/dismiss function pointers), session context struct, and probe infrastructure. `context_init_from_logind()` queries `loginctl` to populate session properties (type, class, user, seat, remote) for a given VT. `context_run_probe()` dispatches probes via switch statement: `PROBE_HAS_DBUS_NOTIFICATIONS` (gdbus introspect), `PROBE_HAS_FRAMEBUFFER` (access check), others stubbed. Probe bitfield prevents redundant work. Tests bypass probes by setting context fields directly (validated in Task 6). `context_free()` cleans up all heap-allocated strings.
+**Task 5 complete:** Engine vtable (`engine` struct with detect/render/dismiss function pointers), session context struct, and probe infrastructure. `context_init_from_logind()` queries logind via sd-bus to populate session properties (type, class, user, seat, remote) for a given VT. `context_run_probe()` dispatches probes via switch statement: `PROBE_HAS_DBUS_NOTIFICATIONS` (gdbus introspect), `PROBE_HAS_FRAMEBUFFER` (access check), others stubbed. Probe bitfield prevents redundant work. Tests bypass probes by setting context fields directly (validated in Task 6). `context_free()` cleans up all heap-allocated strings.
 
 **Task 6 complete:** Engine resolver loop (`resolver_select`) iterates engines in priority order, handles `ENGINE_NEED_PROBE` by running probes and re-evaluating, tracks rejections via bitfield, and prevents infinite loops when a probe is already completed. Probe function is injectable via `probe_fn` callback — tests use a mock that marks probes done without system calls; production code passes `context_run_probe` (or NULL to default). 24 resolver tests cover: first-accept, skip-rejected, all-reject, probe-then-accept, probe-negative-fallback, rejected-skipped-after-probe, pre-completed-probe, probe-then-reject, empty list, null probe_fn, and multi-probe scenarios.
 
@@ -161,7 +168,7 @@ _All files implemented. v1 complete._
 
 **Task 9 complete:** Framebuffer engine (`engine_framebuffer`) — first real engine implementation. Detects by rejecting wayland/x11 sessions and probing for `/dev/fb0` write access. Renders toast directly into mmap'd framebuffer: rounded rectangle background, border, bitmap font text. Saves/restores the region underneath for clean dismissal. Read-after-write verification at +16ms/+50ms (20-point border pixel sampling, >80% match threshold). Background defense thread re-checks every 200ms for `timeout/2` duration, re-renders if clobbered. After 3 consecutive defense failures, the thread cleans up directly under the mutex (not through `dismiss()` -- avoids self-join deadlock per LESSONS-LEARNED.md) and pushes the notification to `g_queue` for later delivery. Global `g_queue` added to `queue.h`/`queue.c` for engine fallback use. Manual test only (requires real framebuffer hardware).
 
-**Task 10 complete:** D-Bus notification engine (`engine_dbus`) — highest-priority engine, tried first. Detects by accepting only wayland/x11 sessions and probing for `org.freedesktop.Notifications` on the session bus. Renders by shelling out to `gdbus call` with the Notify method. For same-user delivery, executes gdbus directly. For cross-user delivery (system daemon running as root, target session owned by a different user), uses `fork()` + `setresgid()`/`setresuid()` to become the target user, discovers `DBUS_SESSION_BUS_ADDRESS` from `/proc/{leader}/environ`, sets `XDG_RUNTIME_DIR`, then execs gdbus in the child process. Retry with exponential backoff: 200ms base, 1.5x multiplier, max 5 attempts (handles slow notification server startup). Dismiss is a no-op — the notification server handles its own timeout/dismissal. Shell-escapes title and body to prevent injection. All 189 existing tests still pass.
+**Task 10 complete:** D-Bus notification engine (`engine_dbus`) — highest-priority engine, tried first. Detects by accepting only wayland/x11 sessions and probing for `org.freedesktop.Notifications` on the session bus. Renders by using sd-bus to call the Notify method. For same-user delivery, opens the user bus directly. For cross-user delivery (system daemon running as root, target session owned by a different user), uses `fork()` + `setresgid()`/`setresuid()` to become the target user, sets `XDG_RUNTIME_DIR`, opens the user bus via `sd_bus_open_user()` in the child process. Retry with exponential backoff: 200ms base, 1.5x multiplier, max 5 attempts (handles slow notification server startup). Dismiss is a no-op — the notification server handles its own timeout/dismissal. Uses `dbus_call_as_user()` callback API for both probe and render paths. All 189 existing tests still pass.
 
 **Task 11 complete:** Queue engine (`engine_queue`) — simplest engine, universal fallback registered last (priority 100). `detect()` always returns `ENGINE_ACCEPT`. `render()` pushes the notification to `g_queue` via `queue_push()` and logs it. `dismiss()` is a no-op. This ensures every notification is captured even when no display engine can handle it. All 189 existing tests still pass.
 
@@ -219,12 +226,14 @@ Client fallback (no explicit path): tries user socket, then `/run/lnotify.sock`.
 
 ## Cross-User D-Bus Execution
 
-`dbus_run_as_user(cmd, target_uid)` is the shared helper for running commands on a user's D-Bus session bus:
+`dbus_call_as_user(target_uid, fn, userdata)` is the callback-based helper for running operations on a user's D-Bus session bus:
 
-- **Same user:** runs via `system()` directly
-- **Cross user:** discovers `DBUS_SESSION_BUS_ADDRESS` from `/proc/{leader}/environ` via loginctl, then `fork()` + `setresgid()`/`setresuid()` + `setenv()` + `execl()`
+- **Same user:** opens user bus via `sd_bus_open_user()`, calls `fn(bus, userdata)`
+- **Cross user:** `fork()` + `setresgid()`/`setresuid()` + `setenv(XDG_RUNTIME_DIR)` + `sd_bus_open_user()` in child, then calls `fn(bus, userdata)` and exits
 
-Used by both the D-Bus probe (`probe_has_dbus_notifications`) and the D-Bus render path (`dbus_exec_with_retry`). The render path adds retry with exponential backoff on top.
+Used by both the D-Bus probe (`probe_has_dbus_notifications` via `introspect_notifications` callback) and the D-Bus render path (`dbus_exec_with_retry` via `send_notification` callback). The render path adds retry with exponential backoff on top.
+
+All logind queries (session discovery, VT lookup) use the system bus directly via the `logind.c` module — no fork/setresuid needed for those.
 
 ## Versioning
 
