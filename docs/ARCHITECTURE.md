@@ -89,7 +89,8 @@ _Updated as implementation progresses. Files marked with [exists] are implemente
 | `Makefile` | Build system (daemon, client, tests) | [exists] |
 | `include/log.h` | Logging module (debug/info/error with timestamps) | [exists] |
 | `src/log.c` | Logging implementation | [exists] |
-| `include/engine.h` | Engine vtable, session context, probe_key enum | planned |
+| `include/engine.h` | Engine vtable, session context, probe_key enum | [exists] |
+| `src/engine.c` | Session context init (logind), probe dispatch, context cleanup | [exists] |
 | `include/lnotify.h` | Notification struct, timestamps, shared constants | [exists] |
 | `src/notification.c` | Notification init, free, expiration, dedup | [exists] |
 | `tests/test_util.h` | Shared test macros (extracted from test_main.c) | [exists] |
@@ -114,6 +115,8 @@ _Updated as implementation progresses. Files marked with [exists] are implemente
 **Task 3 complete:** Wire protocol serialize/deserialize with field_mask support. Binary format: fixed 19-byte header (total_len, field_mask, priority, timeout_ms, ts_sent) followed by length-prefixed strings (title, body, app, group_id). Forward-compatible: unknown field_mask bits are ignored. 34 protocol tests pass covering round-trips, error cases, field combinations, and forward-compatibility.
 
 **Task 4 complete:** Config parser with `#RRGGBBAA` color support and all v1 config keys. Key=value flat file format, `#` comments, whitespace-tolerant. `config_defaults()` populates all fields from design spec defaults. `config_load()` overrides from file, skipping malformed/unknown lines (logged at debug). `config_free()` cleans up heap strings. 48 config tests pass covering defaults, file parsing, color edge cases, whitespace handling, and boolean parsing.
+
+**Task 5 complete:** Engine vtable (`engine` struct with detect/render/dismiss function pointers), session context struct, and probe infrastructure. `context_init_from_logind()` queries `loginctl` to populate session properties (type, class, user, seat, remote) for a given VT. `context_run_probe()` dispatches probes via switch statement: `PROBE_HAS_DBUS_NOTIFICATIONS` (gdbus introspect), `PROBE_HAS_FRAMEBUFFER` (access check), others stubbed. Probe bitfield prevents redundant work. Tests bypass probes by setting context fields directly (validated in Task 6). `context_free()` cleans up all heap-allocated strings.
 
 ## Design References
 
