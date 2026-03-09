@@ -1,0 +1,16 @@
+#ifndef LNOTIFY_FONT_BITMAP_H
+#define LNOTIFY_FONT_BITMAP_H
+
+#include <stdint.h>
+
+// Font dimensions (fixed 8x8 bitmap font)
+#define FONT_WIDTH  8
+#define FONT_HEIGHT 8
+
+// Return a pointer to 8 bytes representing an 8x8 bitmap for the given
+// character. Each byte is one row (MSB = leftmost pixel).
+// Non-printable or unmapped characters fall back to '?'.
+// The returned pointer is to static data and must not be freed.
+const uint8_t *get_char_bitmap(char ch);
+
+#endif
