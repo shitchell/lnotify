@@ -6,6 +6,7 @@ font_backend g_font;
 
 void font_init(const char *font_path) {
 #ifdef HAVE_FREETYPE
+    int freetype_backend_init(font_backend *fb, const char *font_path);
     if (freetype_backend_init(&g_font, font_path) == 0) return;
     log_info("font: FreeType init failed, falling back to bitmap");
 #endif
