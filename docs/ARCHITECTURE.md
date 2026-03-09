@@ -82,19 +82,27 @@ Probes: `HAS_DBUS_NOTIFICATIONS`, `COMPOSITOR_NAME`, `HAS_FRAMEBUFFER`, `TERMINA
 
 ## Key Files
 
-_Updated as implementation progresses._
+_Updated as implementation progresses. Files marked with [exists] are implemented._
 
-| File | Purpose |
-|------|---------|
-| `include/engine.h` | Engine vtable, session context, probe_key enum |
-| `include/lnotify.h` | Notification struct, timestamps, shared constants |
-| `include/protocol.h` | Wire format serialize/deserialize |
-| `include/config.h` | Config struct and parser |
-| `include/resolver.h` | Engine resolver loop |
-| `src/daemon/main.c` | Daemon entry point, VT monitor, event loop |
-| `src/daemon/socket.c` | Unix socket listener |
-| `src/daemon/ssh_delivery.c` | SSH session discovery and pty delivery |
-| `src/client/main.c` | CLI entry point |
+| File | Purpose | Status |
+|------|---------|--------|
+| `Makefile` | Build system (daemon, client, tests) | [exists] |
+| `include/log.h` | Logging module (debug/info/error with timestamps) | [exists] |
+| `src/log.c` | Logging implementation | [exists] |
+| `include/engine.h` | Engine vtable, session context, probe_key enum | planned |
+| `include/lnotify.h` | Notification struct, timestamps, shared constants | planned |
+| `include/protocol.h` | Wire format serialize/deserialize | planned |
+| `include/config.h` | Config struct and parser | planned |
+| `include/resolver.h` | Engine resolver loop | planned |
+| `src/daemon/main.c` | Daemon entry point, VT monitor, event loop | [exists] (stub) |
+| `src/daemon/socket.c` | Unix socket listener | planned |
+| `src/daemon/ssh_delivery.c` | SSH session discovery and pty delivery | planned |
+| `src/client/main.c` | CLI entry point | [exists] (stub) |
+| `tests/test_main.c` | Test runner with minimal assertion framework | [exists] |
+
+## Implementation Status
+
+**Task 1 complete:** Project scaffolding is in place. Makefile builds `lnotifyd` (daemon) and `lnotify` (client) into `build/`. Logging module provides timestamped debug/info/error output to stderr. Test harness compiles and runs with `make test`. Daemon and client are stubs that log startup and exit.
 
 ## Design References
 
