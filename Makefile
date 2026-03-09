@@ -1,5 +1,6 @@
 CC = cc
-CFLAGS = -std=c11 -D_POSIX_C_SOURCE=200809L -D_DEFAULT_SOURCE -Wall -Wextra -Wpedantic -Iinclude -Itests -g
+VERSION := $(shell git describe --tags --always 2>/dev/null || echo "unknown")
+CFLAGS = -std=c11 -D_POSIX_C_SOURCE=200809L -D_DEFAULT_SOURCE -Wall -Wextra -Wpedantic -Iinclude -Itests -g -DLNOTIFY_VERSION=\"$(VERSION)\"
 LDFLAGS = -lpthread
 
 # Source files (add as created)

@@ -29,6 +29,7 @@ static void print_usage(const char *progname) {
         "      --dry-run            Show what would happen, don't send\n"
         "      --socket PATH        Override socket path\n"
         "      --system             Use system socket (/run/lnotify.sock)\n"
+        "      --version            Show version\n"
         "  -h, --help               Show help\n",
         progname);
 }
@@ -59,6 +60,7 @@ int main(int argc, char *argv[]) {
         OPT_DRY_RUN,
         OPT_SOCKET,
         OPT_SYSTEM,
+        OPT_VERSION,
     };
 
     static struct option long_opts[] = {
@@ -70,6 +72,7 @@ int main(int argc, char *argv[]) {
         {"dry-run",  no_argument,       NULL, OPT_DRY_RUN},
         {"socket",   required_argument, NULL, OPT_SOCKET},
         {"system",   no_argument,       NULL, OPT_SYSTEM},
+        {"version",  no_argument,       NULL, OPT_VERSION},
         {"help",     no_argument,       NULL, 'h'},
         {NULL, 0, NULL, 0}
     };
@@ -112,6 +115,9 @@ int main(int argc, char *argv[]) {
         case OPT_SYSTEM:
             system_mode = true;
             break;
+        case OPT_VERSION:
+            printf("lnotify %s\n", LNOTIFY_VERSION);
+            return 0;
         case 'h':
             print_usage(argv[0]);
             return 0;

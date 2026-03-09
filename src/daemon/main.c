@@ -322,9 +322,12 @@ int main(int argc, char *argv[]) {
                 return 1;
             }
             socket_path_override = argv[++i];
+        } else if (strcmp(argv[i], "--version") == 0) {
+            printf("lnotifyd %s\n", LNOTIFY_VERSION);
+            return 0;
         } else {
             fprintf(stderr, "unknown option: %s\n", argv[i]);
-            fprintf(stderr, "usage: lnotifyd [--debug] [--system] [--config PATH] [--socket PATH]\n");
+            fprintf(stderr, "usage: lnotifyd [--debug] [--system] [--config PATH] [--socket PATH] [--version]\n");
             return 1;
         }
     }
