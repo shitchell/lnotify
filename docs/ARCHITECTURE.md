@@ -95,7 +95,9 @@ _Updated as implementation progresses. Files marked with [exists] are implemente
 | `tests/test_util.h` | Shared test macros (extracted from test_main.c) | [exists] |
 | `include/protocol.h` | Wire format serialize/deserialize | [exists] |
 | `src/protocol.c` | Protocol implementation (serialize/deserialize) | [exists] |
-| `include/config.h` | Config struct and parser | planned |
+| `include/config.h` | Config struct (lnotify_color, lnotify_config) and parser | [exists] |
+| `src/config.c` | Config parser: defaults, file loading, color parsing, free | [exists] |
+| `tests/test_config.c` | Config tests (defaults, file parse, colors, whitespace, booleans) | [exists] |
 | `include/resolver.h` | Engine resolver loop | planned |
 | `src/daemon/main.c` | Daemon entry point, VT monitor, event loop | [exists] (stub) |
 | `src/daemon/socket.c` | Unix socket listener | planned |
@@ -110,6 +112,8 @@ _Updated as implementation progresses. Files marked with [exists] are implemente
 **Task 2 complete:** Notification data model (`notification` struct) with creation, string ownership, expiration tracking, remaining timeout calculation, and group_id-based dedup. Test macros extracted to shared `tests/test_util.h`. All 14 notification tests pass.
 
 **Task 3 complete:** Wire protocol serialize/deserialize with field_mask support. Binary format: fixed 19-byte header (total_len, field_mask, priority, timeout_ms, ts_sent) followed by length-prefixed strings (title, body, app, group_id). Forward-compatible: unknown field_mask bits are ignored. 34 protocol tests pass covering round-trips, error cases, field combinations, and forward-compatibility.
+
+**Task 4 complete:** Config parser with `#RRGGBBAA` color support and all v1 config keys. Key=value flat file format, `#` comments, whitespace-tolerant. `config_defaults()` populates all fields from design spec defaults. `config_load()` overrides from file, skipping malformed/unknown lines (logged at debug). `config_free()` cleans up heap strings. 48 config tests pass covering defaults, file parsing, color edge cases, whitespace handling, and boolean parsing.
 
 ## Design References
 
