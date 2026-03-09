@@ -98,7 +98,7 @@ _All files implemented. v1 complete._
 
 | File | Purpose | Status |
 |------|---------|--------|
-| `Makefile` | Build system (daemon, client, tests) | [exists] |
+| `Makefile` | Build system (daemon, client, tests); injects version from git tags | [exists] |
 | `include/log.h` | Logging module (debug/info/error with timestamps) | [exists] |
 | `src/log.c` | Logging implementation | [exists] |
 | `include/engine.h` | Engine vtable, session context, probe_key enum | [exists] |
@@ -115,10 +115,10 @@ _All files implemented. v1 complete._
 | `src/resolver.c` | Resolver implementation (probe pipeline, rejection tracking) | [exists] |
 | `tests/test_resolver.c` | Resolver tests with mock engines (24 assertions) | [exists] |
 | `include/socket.h` | Unix socket IPC API (listen, handle client, default path) | [exists] |
-| `src/daemon/main.c` | Daemon entry point: poll()-based event loop, VT monitoring, engine dispatch | [exists] |
-| `src/daemon/socket.c` | Unix socket listener, SO_PEERCRED capture, client handler (returns notification to caller) | [exists] |
+| `src/daemon/main.c` | Daemon entry point: two-pass arg parsing, poll()-based event loop, VT monitoring, engine dispatch | [exists] |
+| `src/daemon/socket.c` | Unix socket listener (chmod 0666), SO_PEERCRED capture, client handler, default path with root detection | [exists] |
 | `src/daemon/ssh_delivery.c` | SSH session discovery, user/group filtering, pty delivery with 4-tier fallback | [exists] |
-| `src/client/main.c` | CLI client: arg parsing, serialize, socket send | [exists] |
+| `src/client/main.c` | CLI client: arg parsing, serialize, socket send, `--version` | [exists] |
 | `include/queue.h` | Thread-safe notification queue (FIFO, dedup, expiration) | [exists] |
 | `src/queue.c` | Queue implementation (linked list, mutex-protected) | [exists] |
 | `tests/test_queue.c` | Queue tests (enqueue/dequeue, dedup, expiration, FIFO) | [exists] |
@@ -131,8 +131,8 @@ _All files implemented. v1 complete._
 | `include/engine_fb.h` | Framebuffer engine header (exports `engine_framebuffer`) | [exists] |
 | `src/engine_fb.c` | Framebuffer engine: detect, render, dismiss with defense thread | [exists] |
 | `tests/manual/test_fb.sh` | Manual framebuffer test instructions (requires raw TTY) | [exists] |
-| `include/engine_dbus.h` | D-Bus engine header (exports `engine_dbus`) | [exists] |
-| `src/engine_dbus.c` | D-Bus engine: detect, render via gdbus, cross-user fork+setresuid | [exists] |
+| `include/engine_dbus.h` | D-Bus engine header (exports `engine_dbus`, `dbus_run_as_user()`) | [exists] |
+| `src/engine_dbus.c` | D-Bus engine: detect, render via gdbus, shared `dbus_run_as_user()` for cross-user execution | [exists] |
 | `tests/manual/test_dbus.sh` | Manual D-Bus test instructions (requires GUI session) | [exists] |
 | `tests/manual/test_vt.sh` | Manual VT switch monitor test (requires root, multiple VTs) | [exists] |
 | `include/engine_queue.h` | Queue engine header (exports `engine_queue`) | [exists] |
@@ -180,6 +180,62 @@ _All files implemented. v1 complete._
 **Task 8 complete:** Shared rendering utilities that engines compose from. Pure functions with no side effects: `color_to_bgra` (RGBA-to-BGRA conversion for framebuffer byte order), `point_in_rounded_rect` (hit-test with corner arc clipping), `compute_toast_geometry` (position string to screen coordinates with margin), `text_width` (string width at given scale using 8x8 font), `render_fill_rect` (solid rectangle fill into a BGRA buffer with stride and clipping). Embedded 8x8 bitmap font covers all printable ASCII (32-126) with `get_char_bitmap()` returning per-character row data. Font data adapted from the Python prototype. 43 render utility tests pass covering color conversion, rounded-rect hit-testing (center, corners, edges, zero-radius), all four toast positions plus unknown-position fallback, text width edge cases (empty, NULL), font bitmap lookups (printable, space, fallback to '?'), and fill-rect pixel verification. Total: 189 tests passing.
 
 **Task 18 complete:** Final polish pass. Zero compilation warnings with `-Wall -Wextra -Wpedantic`. Thread safety verified: all shared state protected by mutexes, defense thread cleans up directly under lock (no self-join deadlock), queue operations all lock-protected. All 189 unit tests and 20 integration tests pass. Code cleanup: extracted duplicate `read_proc_env()` from `engine_terminal.c` and `ssh_delivery.c` into a shared function declared in `engine_terminal.h`, extracted duplicate single-quote escaping into `escape_single_quotes()` helper. Memory management verified: `notification_free()` and `config_free()` called on all code paths including error returns. All 18 implementation tasks complete.
+
+## Configuration Resolution
+
+Settings follow CLI > config file > env > hardcoded default:
+
+```
+CLI flag (--socket, --config)
+  ↓ overrides
+Config file (socket_path = ...)
+  ↓ overrides
+Environment ($XDG_RUNTIME_DIR, $XDG_CONFIG_HOME)
+  ↓ overrides
+Hardcoded default (/run/lnotify.sock for root, /tmp/lnotify.sock otherwise)
+```
+
+### Daemon Arg Parsing (Two-Pass)
+
+1. **First pass:** extract `--config`, `--system`, `--debug` (needed before config load)
+2. **Load config file:** `--config PATH` > `--system` (`/etc/lnotify.conf`) > user config (`$XDG_CONFIG_HOME/lnotify/config`)
+3. **Apply remaining CLI flags:** override config values (e.g. `--socket`)
+
+Explicit `--config` is fatal on failure (user asked for it). Default config paths are non-fatal (optional).
+
+### Socket Path Resolution
+
+```
+--socket PATH  →  config socket_path  →  socket_default_path(system_mode)
+```
+
+`socket_default_path()` logic:
+- `system_mode=true` → `/run/lnotify.sock`
+- `XDG_RUNTIME_DIR` set → `$XDG_RUNTIME_DIR/lnotify.sock`
+- Root (uid 0) → `/run/lnotify.sock`
+- Otherwise → `/tmp/lnotify.sock`
+
+Client fallback (no explicit path): tries user socket, then `/run/lnotify.sock`.
+
+## Cross-User D-Bus Execution
+
+`dbus_run_as_user(cmd, target_uid)` is the shared helper for running commands on a user's D-Bus session bus:
+
+- **Same user:** runs via `system()` directly
+- **Cross user:** discovers `DBUS_SESSION_BUS_ADDRESS` from `/proc/{leader}/environ` via loginctl, then `fork()` + `setresgid()`/`setresuid()` + `setenv()` + `execl()`
+
+Used by both the D-Bus probe (`probe_has_dbus_notifications`) and the D-Bus render path (`dbus_exec_with_retry`). The render path adds retry with exponential backoff on top.
+
+## Versioning
+
+Git tags are the single source of truth. The Makefile injects the version at build time:
+
+```makefile
+VERSION := $(shell git describe --tags --always 2>/dev/null || echo "unknown")
+CFLAGS += -DLNOTIFY_VERSION=\"$(VERSION)\"
+```
+
+Both binaries support `--version`. Version format: `v{n}` (e.g. `v0`). Dev builds show `v0-3-gabcdef` (3 commits past v0).
 
 ## Dry-Run Mode
 

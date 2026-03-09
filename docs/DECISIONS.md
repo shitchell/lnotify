@@ -440,6 +440,103 @@ When Claude raised the edge case that a root system daemon's "always notify own 
 
 ---
 
+## Session: 2026-03-09 — Socket Fixes, Config Consistency, Versioning
+
+**Context:** First post-v1 bugfix session. Root daemon couldn't communicate with non-root clients due to socket path mismatch and socket permissions. Config resolution order was inconsistent. No `--version` flag existed. Also discovered the D-Bus probe failed when daemon ran as root because it didn't do cross-user D-Bus introspection like the render path did.
+
+**GVP source:** Inferred inline
+
+---
+
+### D26: Root daemon uses /run/ socket (not /tmp/)
+
+> When `XDG_RUNTIME_DIR` is unset and daemon is root, `socket_default_path()` returns `/run/lnotify.sock` instead of `/tmp/lnotify.sock`.
+
+- **Chosen:** `getuid() == 0` check in `socket_default_path()`
+- **Rationale:** User said "i think the preferred solution would involve having a root daemon always fallback on /run/ instead of /tmp/". The client's fallback chain tries user socket then `/run/lnotify.sock` — using `/tmp/` for root meant the client could never find the daemon.
+- **Maps to:** V1
+- **Tags:** socket, permissions, bug
+
+---
+
+### D27: Socket file permissions 0666
+
+> Unix socket is `chmod 0666` after bind so non-root users can connect to a root-owned daemon.
+
+- **Chosen:** `chmod(path, 0666)` after `bind()` in `socket_listen()`
+- **Rationale:** Discovered empirically during testing. Unix sockets require write permission to connect, but default umask creates sockets with `0755`. Without this, non-root clients get EACCES when connecting to a root daemon's socket.
+- **Maps to:** V1
+- **Tags:** socket, permissions, bug
+
+---
+
+### D28: Config resolution order — CLI > config file > env > hardcoded
+
+> Daemon settings follow a consistent resolution chain: CLI flags override config file values, which override environment-based defaults, which override hardcoded defaults.
+
+- **Chosen:** Two-pass arg parsing (first pass for `--config`/`--system`/`--debug`, load config, second pass for all args to override config)
+- **Rationale:** User said "for config flags, i'd do: set config_path, do a first-pass of the args to see if there's a `--config <path>` set and update config_path accordingly if so, load config_path, second pass over all command line args." Ensures `--config` is resolved before loading, and CLI args always win over config values.
+- **Maps to:** V1, P1
+- **Tags:** config, CLI
+
+**Considered:**
+
+| Alternative | Source | Description | Why not? |
+|---|---|---|---|
+| Single-pass with deferred config load | claude considered | Process all args, then load config, then apply CLI overrides | Two-pass is the standard pattern and was explicitly preferred by the user |
+
+---
+
+### D29: `--config PATH` and `--socket PATH` for daemon
+
+> Daemon accepts `--config PATH` to override config file location and `--socket PATH` to override socket path. `socket_path` also added to config file.
+
+- **Chosen:** Both CLI flags + config key, explicit `--config` is fatal on failure (user asked for it specifically)
+- **Rationale:** User noted `--config` was missing and that socket path wasn't in the config file. Resolution order for socket: `--socket` > config `socket_path` > `socket_default_path(system_mode)`. User confirmed `--config` should override `--system`'s config path: "yeah, that's how i'd expect it to work, too"
+- **Maps to:** V1
+- **Tags:** config, CLI
+
+---
+
+### D30: Client config deferred to separate design session
+
+> The `lnotify` client does not load config files in v1. Config loading is a future feature requiring its own design.
+
+- **Chosen:** No client config for now
+- **Rationale:** User said "i'd actually expect it to have a config as well, but if we do add one i'll need to review what would make sense to configure and go through a design session for that. outside the scope of this"
+- **Maps to:** P1
+- **Tags:** config, client, deferred
+
+---
+
+### D31: Shared `dbus_run_as_user()` helper (DRY cross-user D-Bus execution)
+
+> Single function handles both same-user (`system()`) and cross-user (fork + setresuid + D-Bus address discovery) execution of commands on a user's D-Bus session bus. Used by both the probe and the render path.
+
+- **Chosen:** `dbus_run_as_user()` in `engine_dbus.c`, exposed via `engine_dbus.h`
+- **Rationale:** The D-Bus probe ran as root and failed because root has no `DBUS_SESSION_BUS_ADDRESS`. The render path already handled this with fork+setresuid but the probe didn't. User said "no trust. zero trust. verify everything. that said, i like DRY" — wanted the fix to share logic rather than duplicate the cross-user pattern. Per D25: "i love DRY."
+- **Maps to:** V3, P1
+- **Tags:** dbus, architecture, DRY, bug
+
+**Considered:**
+
+| Alternative | Source | Description | Why not? |
+|---|---|---|---|
+| Trust session type (skip introspection for wayland/x11) | claude proposed as option (b) | Assume graphical sessions have notification servers | User said "no trust. zero trust. verify everything." |
+
+---
+
+### D32: Git-tag-based versioning
+
+> Version is the single source of truth in git tags. Injected at build time via `git describe --tags --always` in the Makefile. No version strings in source files.
+
+- **Chosen:** Makefile `VERSION := $(shell git describe ...)`, `-DLNOTIFY_VERSION` compiler flag
+- **Rationale:** User said "i like when the SOT is tags" and asked how reasonable that is in C. Standard C/Makefile pattern: tag is SOT, dev builds automatically show distance from last tag (e.g. `v0-3-gabcdef`). User chose simple `v{n}` numbering: "for this i think i'm happy with simply `v{n}` version numbers"
+- **Maps to:** V1
+- **Tags:** build, versioning
+
+---
+
 ### Decisions With Late-Captured Rationale
 
 - **D3: Three-component architecture** — rationale captured in session 2 (2026-03-09). User said "a daemon lets us more easily send notifications from a user account that have root-permission propagation." On the D-Bus listener component specifically, user said "i'm honestly not sure haha, are we still using that? i would conceptualize that as a component of the daemon?" Claude clarified: the D-Bus listener is a component inside the daemon that implements `org.freedesktop.Notifications`, letting existing tools (`notify-send`, desktop apps) route through lnotifyd. User accepted this framing. Especially relevant for the Sway scenario where lnotifyd acts as the notification daemon.
