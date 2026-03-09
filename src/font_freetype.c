@@ -5,7 +5,9 @@
 #include <ft2build.h>
 #include FT_FREETYPE_H
 
+#include <fontconfig/fontconfig.h>
 #include <string.h>
+#include <stdlib.h>
 
 static FT_Library ft_lib;
 static FT_Face    ft_face;
@@ -54,12 +56,19 @@ static void freetype_draw_text(uint8_t *fb, int fb_w, int fb_h, int stride,
                 if (px < 0 || px >= fb_w) continue;
 
                 unsigned char alpha = bmp->buffer[(int)row * bmp->pitch + (int)col];
-                if (alpha > 128) {
-                    int offset = py * stride + px * 4;
-                    fb[offset + 0] = bgra[0];
-                    fb[offset + 1] = bgra[1];
-                    fb[offset + 2] = bgra[2];
-                    fb[offset + 3] = bgra[3];
+                if (alpha == 0) continue;
+                uint8_t *pixel = fb + py * stride + px * 4;
+                if (alpha == 255) {
+                    pixel[0] = bgra[0];
+                    pixel[1] = bgra[1];
+                    pixel[2] = bgra[2];
+                    pixel[3] = bgra[3];
+                } else {
+                    uint8_t inv = 255 - alpha;
+                    pixel[0] = (uint8_t)((bgra[0] * alpha + pixel[0] * inv) / 255);
+                    pixel[1] = (uint8_t)((bgra[1] * alpha + pixel[1] * inv) / 255);
+                    pixel[2] = (uint8_t)((bgra[2] * alpha + pixel[2] * inv) / 255);
+                    pixel[3] = 255;
                 }
             }
         }
@@ -73,38 +82,79 @@ static void freetype_cleanup(void) {
     FT_Done_FreeType(ft_lib);
 }
 
-/* Common system font paths to try when no font_path is specified. */
-static const char *fallback_fonts[] = {
-    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-    "/usr/share/fonts/TTF/DejaVuSans.ttf",
-    "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
-    NULL
-};
+/* Resolve a font name (e.g. "sans", "monospace", "DejaVu Sans") to a file
+ * path using fontconfig. Returns a heap-allocated string or NULL on failure. */
+static char *fc_resolve_font(const char *name) {
+    FcConfig *config = FcInitLoadConfigAndFonts();
+    if (!config) return NULL;
 
-int freetype_backend_init(font_backend *fb, const char *font_path) {
+    FcPattern *pat = FcNameParse((const FcChar8 *)name);
+    if (!pat) { FcConfigDestroy(config); return NULL; }
+
+    FcConfigSubstitute(config, pat, FcMatchPattern);
+    FcDefaultSubstitute(pat);
+
+    FcResult result;
+    FcPattern *match = FcFontMatch(config, pat, &result);
+    char *path = NULL;
+
+    if (match) {
+        FcChar8 *file = NULL;
+        if (FcPatternGetString(match, FC_FILE, 0, &file) == FcResultMatch && file) {
+            path = strdup((const char *)file);
+        }
+        FcPatternDestroy(match);
+    }
+
+    FcPatternDestroy(pat);
+    FcConfigDestroy(config);
+    return path;
+}
+
+/* Try to load a FreeType face from a file path. Returns 0 on success. */
+static int try_load_face(const char *path, const char *label) {
+    if (FT_New_Face(ft_lib, path, 0, &ft_face) == 0) {
+        log_info("font: loaded FreeType font: %s", path);
+        return 0;
+    }
+    log_info("font: could not load %s: %s", label, path);
+    return -1;
+}
+
+int freetype_backend_init(font_backend *fb, const char *font_name,
+                          const char *font_path) {
     if (FT_Init_FreeType(&ft_lib) != 0) {
         log_error("font: FreeType library init failed");
         return -1;
     }
 
-    /* Try the specified font path first. */
+    /* Priority 1: explicit font_path (must contain '/') */
     if (font_path && *font_path) {
-        if (FT_New_Face(ft_lib, font_path, 0, &ft_face) == 0) {
-            log_info("font: loaded FreeType font: %s", font_path);
+        if (try_load_face(font_path, "font_path") == 0)
             goto success;
-        }
-        log_info("font: could not load '%s', trying fallbacks", font_path);
     }
 
-    /* Try fallback system fonts. */
-    for (const char **fp = fallback_fonts; *fp; fp++) {
-        if (FT_New_Face(ft_lib, *fp, 0, &ft_face) == 0) {
-            log_info("font: loaded FreeType font: %s", *fp);
-            goto success;
+    /* Priority 2: resolve font_name via fontconfig */
+    {
+        const char *name = (font_name && *font_name) ? font_name : "sans";
+        char *resolved = fc_resolve_font(name);
+        if (resolved) {
+            int ok = (FT_New_Face(ft_lib, resolved, 0, &ft_face) == 0);
+            if (ok) {
+                log_info("font: loaded FreeType font: %s (resolved from '%s')",
+                         resolved, name);
+            } else {
+                log_info("font: fontconfig resolved '%s' to '%s' but load failed",
+                         name, resolved);
+            }
+            free(resolved);
+            if (ok) goto success;
+        } else {
+            log_info("font: fontconfig could not resolve '%s'", name);
         }
     }
 
-    /* All paths failed. */
+    /* All attempts failed. */
     log_error("font: no usable FreeType font found");
     FT_Done_FreeType(ft_lib);
     return -1;

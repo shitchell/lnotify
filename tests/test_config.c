@@ -14,7 +14,7 @@ void test_config_suite(void) {
         ASSERT_EQ(cfg.border_radius, 12, "default border radius");
         ASSERT_EQ(cfg.padding, 20, "default padding");
         ASSERT_EQ(cfg.margin, 30, "default margin");
-        ASSERT_EQ(cfg.font_size, 16, "default font size");
+        ASSERT_EQ(cfg.font_size, 18, "default font size");
 
         // Default colors
         ASSERT_EQ(cfg.bg_color.r, 0x28, "default bg red");
@@ -33,9 +33,8 @@ void test_config_suite(void) {
         ASSERT_EQ(cfg.border_color.a, 0xFF, "default border alpha");
 
         // Default font path
-        ASSERT_STR_EQ(cfg.font_path,
-            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-            "default font path");
+        ASSERT_STR_EQ(cfg.font_name, "monospace", "default font name");
+        ASSERT_STR_EQ(cfg.font_path, "", "default font path empty");
 
         // Default SSH settings
         ASSERT_STR_EQ(cfg.ssh_modes, "osc,overlay,text", "default ssh_modes");
@@ -83,7 +82,7 @@ void test_config_suite(void) {
         ASSERT_EQ(cfg.bg_color.a, 0xFF, "bg alpha");
 
         // Unchanged fields keep defaults
-        ASSERT_EQ(cfg.font_size, 16, "font_size unchanged");
+        ASSERT_EQ(cfg.font_size, 18, "font_size unchanged");
         ASSERT_EQ(cfg.border_radius, 12, "border_radius unchanged");
 
         config_free(&cfg);

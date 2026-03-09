@@ -379,8 +379,8 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    // Initialize font backend (after config so font_path is available)
-    font_init(g_config.font_path);
+    // Initialize font backend (after config so font settings are available)
+    font_init(g_config.font_name, g_config.font_path);
 
     // Log engine registry
     log_info("registered %d engines:", engine_count);

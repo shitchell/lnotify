@@ -19,8 +19,9 @@ typedef struct {
     // Display
     int      default_timeout;       // ms, default 5000
     char    *position;              // e.g. "top-right"
-    char    *font_path;             // path to TTF
-    int      font_size;             // px, default 14
+    char    *font_name;             // fontconfig name, default "sans"
+    char    *font_path;             // explicit TTF path (overrides font_name)
+    int      font_size;             // px, default 18
 
     // Toast style
     lnotify_color bg_color;         // default #282828E6

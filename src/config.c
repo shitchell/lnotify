@@ -80,8 +80,9 @@ void config_defaults(lnotify_config *cfg) {
 
     cfg->default_timeout = 5000;
     cfg->position = strdup("top-right");
-    cfg->font_path = strdup("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf");
-    cfg->font_size = 16;
+    cfg->font_name = strdup("monospace");
+    cfg->font_path = strdup("");
+    cfg->font_size = 18;
 
     config_parse_color("#282828E6", &cfg->bg_color);
     config_parse_color("#FFFFFFFF", &cfg->fg_color);
@@ -113,6 +114,8 @@ static void config_set(lnotify_config *cfg, const char *key, const char *value) 
         cfg->default_timeout = atoi(value);
     } else if (strcmp(key, "position") == 0) {
         set_str(&cfg->position, value);
+    } else if (strcmp(key, "font_name") == 0) {
+        set_str(&cfg->font_name, value);
     } else if (strcmp(key, "font_path") == 0) {
         set_str(&cfg->font_path, value);
     } else if (strcmp(key, "font_size") == 0) {
@@ -217,6 +220,7 @@ int config_load(lnotify_config *cfg, const char *path) {
 
 void config_free(lnotify_config *cfg) {
     free(cfg->position);          cfg->position = NULL;
+    free(cfg->font_name);         cfg->font_name = NULL;
     free(cfg->font_path);         cfg->font_path = NULL;
     free(cfg->ssh_modes);         cfg->ssh_modes = NULL;
     free(cfg->ssh_fullscreen_apps); cfg->ssh_fullscreen_apps = NULL;
