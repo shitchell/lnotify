@@ -45,39 +45,8 @@ static bool word_in_list(const char *word, const char *list) {
     return false;
 }
 
-// Read a NUL-separated environment from /proc/{pid}/environ and look for
-// a variable named `name`. Returns a heap-allocated copy of the value, or
-// NULL if not found.
-static char *read_proc_env(pid_t pid, const char *name) {
-    char env_path[64];
-    snprintf(env_path, sizeof(env_path), "/proc/%d/environ", (int)pid);
-
-    int fd = open(env_path, O_RDONLY);
-    if (fd < 0) return NULL;
-
-    char buf[8192];
-    ssize_t nread = read(fd, buf, sizeof(buf) - 1);
-    close(fd);
-
-    if (nread <= 0) return NULL;
-    buf[nread] = '\0';
-
-    size_t name_len = strlen(name);
-    const char *p = buf;
-    const char *end = buf + nread;
-
-    while (p < end) {
-        size_t entry_len = strlen(p);
-        if (entry_len > name_len + 1 &&
-            strncmp(p, name, name_len) == 0 &&
-            p[name_len] == '=') {
-            return strdup(p + name_len + 1);
-        }
-        p += entry_len + 1;
-    }
-
-    return NULL;
-}
+// read_proc_env() is declared in engine_terminal.h and implemented in
+// engine_terminal.c — shared between this file and the terminal renderer.
 
 // Check if a user is in a given group (by group name).
 static bool user_in_group(const char *username, const char *groupname) {

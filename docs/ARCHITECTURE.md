@@ -94,7 +94,7 @@ The resolver accepts a `probe_fn` callback for dependency injection. Production 
 
 ## Key Files
 
-_Updated as implementation progresses. Files marked with [exists] are implemented._
+_All files implemented. v1 complete._
 
 | File | Purpose | Status |
 |------|---------|--------|
@@ -178,6 +178,8 @@ _Updated as implementation progresses. Files marked with [exists] are implemente
 **Task 16 complete:** Integration testing. Shell-based end-to-end test script (`tests/test_integration.sh`) that validates the full daemon lifecycle without root or hardware: build, start daemon with custom socket path (via `XDG_RUNTIME_DIR` override), wait for socket ready, send notifications via CLI client, verify receipt in daemon logs, test all field types (title, body, priority, app, group_id, timeout), verify engine selection occurs, test dedup with group_id, verify expiration timeout preservation, test multiple rapid notifications, verify client error handling (missing daemon, missing body), verify clean shutdown (SIGTERM, socket removal, exit message). Also: comprehensive manual test README (`tests/manual/README.md`) documenting all four manual test scripts with prerequisites, exact procedures, expected outputs, and golden file capture instructions. 20/20 integration tests pass.
 
 **Task 8 complete:** Shared rendering utilities that engines compose from. Pure functions with no side effects: `color_to_bgra` (RGBA-to-BGRA conversion for framebuffer byte order), `point_in_rounded_rect` (hit-test with corner arc clipping), `compute_toast_geometry` (position string to screen coordinates with margin), `text_width` (string width at given scale using 8x8 font), `render_fill_rect` (solid rectangle fill into a BGRA buffer with stride and clipping). Embedded 8x8 bitmap font covers all printable ASCII (32-126) with `get_char_bitmap()` returning per-character row data. Font data adapted from the Python prototype. 43 render utility tests pass covering color conversion, rounded-rect hit-testing (center, corners, edges, zero-radius), all four toast positions plus unknown-position fallback, text width edge cases (empty, NULL), font bitmap lookups (printable, space, fallback to '?'), and fill-rect pixel verification. Total: 189 tests passing.
+
+**Task 18 complete:** Final polish pass. Zero compilation warnings with `-Wall -Wextra -Wpedantic`. Thread safety verified: all shared state protected by mutexes, defense thread cleans up directly under lock (no self-join deadlock), queue operations all lock-protected. All 189 unit tests and 20 integration tests pass. Code cleanup: extracted duplicate `read_proc_env()` from `engine_terminal.c` and `ssh_delivery.c` into a shared function declared in `engine_terminal.h`, extracted duplicate single-quote escaping into `escape_single_quotes()` helper. Memory management verified: `notification_free()` and `config_free()` called on all code paths including error returns. All 18 implementation tasks complete.
 
 ## Dry-Run Mode
 

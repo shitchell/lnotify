@@ -17,7 +17,7 @@
 // Read a NUL-separated environment from /proc/{pid}/environ and look for
 // a variable named `name`. Returns a heap-allocated copy of the value, or
 // NULL if not found (or unreadable).
-static char *read_proc_env(pid_t pid, const char *name) {
+char *read_proc_env(pid_t pid, const char *name) {
     char env_path[64];
     snprintf(env_path, sizeof(env_path), "/proc/%d/environ", (int)pid);
 
@@ -136,6 +136,27 @@ bool terminal_render_osc(int pty_fd, const ssh_pty_info *pty,
 }
 
 // ---------------------------------------------------------------------------
+// Helpers: escape single quotes for shell embedding
+// ---------------------------------------------------------------------------
+
+// Escape single quotes in `src` into `dst` (max `dst_size` bytes).
+// Uses the '\'' idiom (end quote, literal quote, resume quote).
+static void escape_single_quotes(const char *src, char *dst, size_t dst_size) {
+    size_t di = 0;
+    for (const char *p = src; *p && di < dst_size - 5; p++) {
+        if (*p == '\'') {
+            dst[di++] = '\'';
+            dst[di++] = '\\';
+            dst[di++] = '\'';
+            dst[di++] = '\'';
+        } else {
+            dst[di++] = *p;
+        }
+    }
+    dst[di] = '\0';
+}
+
+// ---------------------------------------------------------------------------
 // Tier 2: tmux display-popup / display-message
 // ---------------------------------------------------------------------------
 
@@ -178,20 +199,8 @@ bool terminal_render_tmux(const ssh_pty_info *pty,
         snprintf(msg, sizeof(msg), "%s%s%s",
                  title, (title[0] && body[0]) ? ": " : "", body);
 
-        // Escape single quotes in the message
         char escaped[1024];
-        size_t ei = 0;
-        for (const char *p = msg; *p && ei < sizeof(escaped) - 5; p++) {
-            if (*p == '\'') {
-                escaped[ei++] = '\'';
-                escaped[ei++] = '\\';
-                escaped[ei++] = '\'';
-                escaped[ei++] = '\'';
-            } else {
-                escaped[ei++] = *p;
-            }
-        }
-        escaped[ei] = '\0';
+        escape_single_quotes(msg, escaped, sizeof(escaped));
 
         char cmd[2048];
         snprintf(cmd, sizeof(cmd),
@@ -212,20 +221,8 @@ bool terminal_render_tmux(const ssh_pty_info *pty,
         snprintf(msg, sizeof(msg), "[lnotify] %s%s%s",
                  title, (title[0] && body[0]) ? ": " : "", body);
 
-        // Escape single quotes
         char escaped[1024];
-        size_t ei = 0;
-        for (const char *p = msg; *p && ei < sizeof(escaped) - 5; p++) {
-            if (*p == '\'') {
-                escaped[ei++] = '\'';
-                escaped[ei++] = '\\';
-                escaped[ei++] = '\'';
-                escaped[ei++] = '\'';
-            } else {
-                escaped[ei++] = *p;
-            }
-        }
-        escaped[ei] = '\0';
+        escape_single_quotes(msg, escaped, sizeof(escaped));
 
         char cmd[2048];
         snprintf(cmd, sizeof(cmd),

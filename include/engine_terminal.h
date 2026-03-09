@@ -9,6 +9,15 @@
 #include <stdint.h>
 
 // ---------------------------------------------------------------------------
+// Proc filesystem utilities
+// ---------------------------------------------------------------------------
+
+// Read a NUL-separated environment from /proc/{pid}/environ and look for
+// a variable named `name`. Returns a heap-allocated copy of the value, or
+// NULL if not found (or unreadable). Caller must free().
+char *read_proc_env(pid_t pid, const char *name);
+
+// ---------------------------------------------------------------------------
 // SSH session info for a qualifying pty
 // ---------------------------------------------------------------------------
 
