@@ -301,15 +301,30 @@ static void drain_queue(session_context *ctx) {
 
 int main(int argc, char *argv[]) {
     bool system_mode = false;
+    const char *config_path_override = NULL;
+    const char *socket_path_override = NULL;
 
+    // First pass: extract --config, --system, --debug (needed before config load)
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--debug") == 0) {
             log_debug_enabled = true;
         } else if (strcmp(argv[i], "--system") == 0) {
             system_mode = true;
+        } else if (strcmp(argv[i], "--config") == 0) {
+            if (i + 1 >= argc) {
+                fprintf(stderr, "error: --config requires an argument\n");
+                return 1;
+            }
+            config_path_override = argv[++i];
+        } else if (strcmp(argv[i], "--socket") == 0) {
+            if (i + 1 >= argc) {
+                fprintf(stderr, "error: --socket requires an argument\n");
+                return 1;
+            }
+            socket_path_override = argv[++i];
         } else {
             fprintf(stderr, "unknown option: %s\n", argv[i]);
-            fprintf(stderr, "usage: lnotifyd [--debug] [--system]\n");
+            fprintf(stderr, "usage: lnotifyd [--debug] [--system] [--config PATH] [--socket PATH]\n");
             return 1;
         }
     }
@@ -324,10 +339,21 @@ int main(int argc, char *argv[]) {
     // Initialize engine registry
     init_engines();
 
-    // Load configuration
+    // Load configuration: --config overrides --system default
     config_defaults(&g_config);
-    if (system_mode) {
-        config_load(&g_config, "/etc/lnotify.conf");
+    if (config_path_override) {
+        if (config_load(&g_config, config_path_override) != 0) {
+            fprintf(stderr, "error: cannot load config '%s'\n",
+                    config_path_override);
+            return 1;
+        }
+    } else if (system_mode) {
+        // Non-fatal: system config is optional
+        if (access("/etc/lnotify.conf", R_OK) == 0) {
+            config_load(&g_config, "/etc/lnotify.conf");
+        } else {
+            log_debug("no config file at /etc/lnotify.conf, using defaults");
+        }
     } else {
         // Try $XDG_CONFIG_HOME/lnotify/config, then ~/.config/lnotify/config
         const char *xdg_config = getenv("XDG_CONFIG_HOME");
@@ -358,9 +384,16 @@ int main(int argc, char *argv[]) {
     // Initialize notification queue
     queue_init(&g_queue);
 
-    // Determine socket path
-    const char *path = socket_default_path(system_mode);
-    g_socket_path = strdup(path);
+    // Determine socket path: CLI --socket > config socket_path > auto-detect
+    const char *resolved_socket;
+    if (socket_path_override) {
+        resolved_socket = socket_path_override;
+    } else if (g_config.socket_path) {
+        resolved_socket = g_config.socket_path;
+    } else {
+        resolved_socket = socket_default_path(system_mode);
+    }
+    g_socket_path = strdup(resolved_socket);
     if (!g_socket_path) {
         log_error("strdup failed");
         return 1;

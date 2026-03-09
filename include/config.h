@@ -38,6 +38,9 @@ typedef struct {
     char    *ssh_groups;            // space-separated
     char    *ssh_users;             // space-separated
 
+    // Daemon
+    char    *socket_path;           // override socket path (default: auto-detect)
+
     // Internal (not in config file for v1)
     char    *engine_priorities;     // comma-separated engine names
 } lnotify_config;

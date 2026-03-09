@@ -46,6 +46,11 @@ void test_config_suite(void) {
             "default ssh_notify_over_fullscreen is false");
         ASSERT_STR_EQ(cfg.ssh_groups, "", "default ssh_groups empty");
         ASSERT_STR_EQ(cfg.ssh_users, "", "default ssh_users empty");
+
+        // socket_path defaults to NULL (auto-detect)
+        ASSERT_TRUE(cfg.socket_path == NULL, "default socket_path is NULL");
+
+        config_free(&cfg);
     }
 
     // Test: parse a config file
@@ -155,6 +160,24 @@ void test_config_suite(void) {
         ASSERT_EQ(cfg.default_timeout, 7777, "timeout with extra whitespace");
         ASSERT_STR_EQ(cfg.position, "center", "position no spaces around =");
         ASSERT_EQ(cfg.border_width, 5, "border_width no spaces");
+
+        config_free(&cfg);
+        remove(path);
+    }
+
+    // Test: socket_path from config file
+    {
+        const char *path = "/tmp/lnotify_test_socket.conf";
+        FILE *f = fopen(path, "w");
+        fprintf(f, "socket_path = /custom/lnotify.sock\n");
+        fclose(f);
+
+        lnotify_config cfg;
+        config_defaults(&cfg);
+        int rc = config_load(&cfg, path);
+        ASSERT_EQ(rc, 0, "config_load socket_path");
+        ASSERT_STR_EQ(cfg.socket_path, "/custom/lnotify.sock",
+            "socket_path from config");
 
         config_free(&cfg);
         remove(path);

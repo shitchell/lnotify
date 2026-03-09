@@ -151,6 +151,9 @@ const char *socket_default_path(bool system_mode) {
     const char *xdg = getenv("XDG_RUNTIME_DIR");
     if (xdg && xdg[0] != '\0') {
         snprintf(path_buf, sizeof(path_buf), "%s/lnotify.sock", xdg);
+    } else if (getuid() == 0) {
+        log_debug("XDG_RUNTIME_DIR not set, running as root — using /run");
+        return "/run/lnotify.sock";
     } else {
         log_debug("XDG_RUNTIME_DIR not set, falling back to /tmp");
         snprintf(path_buf, sizeof(path_buf), "/tmp/lnotify.sock");

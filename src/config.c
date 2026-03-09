@@ -98,6 +98,7 @@ void config_defaults(lnotify_config *cfg) {
     cfg->ssh_groups = strdup("");
     cfg->ssh_users = strdup("");
 
+    cfg->socket_path = NULL;  // auto-detect via socket_default_path()
     cfg->engine_priorities = strdup("dbus,framebuffer,terminal,queue");
 }
 
@@ -147,6 +148,10 @@ static void config_set(lnotify_config *cfg, const char *key, const char *value) 
         set_str(&cfg->ssh_groups, value);
     } else if (strcmp(key, "ssh_users") == 0) {
         set_str(&cfg->ssh_users, value);
+    }
+    // Daemon
+    else if (strcmp(key, "socket_path") == 0) {
+        set_str(&cfg->socket_path, value);
     }
     // Internal
     else if (strcmp(key, "engine_priorities") == 0) {
@@ -217,5 +222,6 @@ void config_free(lnotify_config *cfg) {
     free(cfg->ssh_fullscreen_apps); cfg->ssh_fullscreen_apps = NULL;
     free(cfg->ssh_groups);        cfg->ssh_groups = NULL;
     free(cfg->ssh_users);         cfg->ssh_users = NULL;
+    free(cfg->socket_path);       cfg->socket_path = NULL;
     free(cfg->engine_priorities); cfg->engine_priorities = NULL;
 }
