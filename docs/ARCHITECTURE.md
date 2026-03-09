@@ -114,8 +114,9 @@ _Updated as implementation progresses. Files marked with [exists] are implemente
 | `include/resolver.h` | Engine resolver loop API | [exists] |
 | `src/resolver.c` | Resolver implementation (probe pipeline, rejection tracking) | [exists] |
 | `tests/test_resolver.c` | Resolver tests with mock engines (24 assertions) | [exists] |
-| `src/daemon/main.c` | Daemon entry point, VT monitor, event loop | [exists] (stub) |
-| `src/daemon/socket.c` | Unix socket listener | planned |
+| `include/socket.h` | Unix socket IPC API (listen, handle client, default path) | [exists] |
+| `src/daemon/main.c` | Daemon entry point: arg parsing, signal handling, accept loop | [exists] |
+| `src/daemon/socket.c` | Unix socket listener, SO_PEERCRED capture, client handler | [exists] |
 | `src/daemon/ssh_delivery.c` | SSH session discovery and pty delivery | planned |
 | `src/client/main.c` | CLI entry point | [exists] (stub) |
 | `include/queue.h` | Thread-safe notification queue (FIFO, dedup, expiration) | [exists] |
@@ -157,6 +158,8 @@ _Updated as implementation progresses. Files marked with [exists] are implemente
 **Task 10 complete:** D-Bus notification engine (`engine_dbus`) — highest-priority engine, tried first. Detects by accepting only wayland/x11 sessions and probing for `org.freedesktop.Notifications` on the session bus. Renders by shelling out to `gdbus call` with the Notify method. For same-user delivery, executes gdbus directly. For cross-user delivery (system daemon running as root, target session owned by a different user), uses `fork()` + `setresgid()`/`setresuid()` to become the target user, discovers `DBUS_SESSION_BUS_ADDRESS` from `/proc/{leader}/environ`, sets `XDG_RUNTIME_DIR`, then execs gdbus in the child process. Retry with exponential backoff: 200ms base, 1.5x multiplier, max 5 attempts (handles slow notification server startup). Dismiss is a no-op — the notification server handles its own timeout/dismissal. Shell-escapes title and body to prevent injection. All 189 existing tests still pass.
 
 **Task 11 complete:** Queue engine (`engine_queue`) — simplest engine, universal fallback registered last (priority 100). `detect()` always returns `ENGINE_ACCEPT`. `render()` pushes the notification to `g_queue` via `queue_push()` and logs it. `dismiss()` is a no-op. This ensures every notification is captured even when no display engine can handle it. All 189 existing tests still pass.
+
+**Task 12 complete:** Unix socket IPC (`socket.h`/`socket.c`). Daemon listens on AF_UNIX/SOCK_STREAM socket at `$XDG_RUNTIME_DIR/lnotify.sock` (user mode) or `/run/lnotify.sock` (system mode). `socket_listen()` creates, binds, and listens with stale socket cleanup. `socket_handle_client()` reads the full fire-and-forget message, deserializes via `protocol_deserialize()`, captures `origin_uid` via `getsockopt(SO_PEERCRED)`, sets `ts_received`/`ts_mono`, and logs. Daemon main now parses `--system`/`--debug` flags, installs SIGINT/SIGTERM handlers for clean shutdown (removes socket file), and runs a blocking accept loop. Task 14 will replace the accept loop with a `poll()`-based event loop and wire in the engine resolver.
 
 **Task 8 complete:** Shared rendering utilities that engines compose from. Pure functions with no side effects: `color_to_bgra` (RGBA-to-BGRA conversion for framebuffer byte order), `point_in_rounded_rect` (hit-test with corner arc clipping), `compute_toast_geometry` (position string to screen coordinates with margin), `text_width` (string width at given scale using 8x8 font), `render_fill_rect` (solid rectangle fill into a BGRA buffer with stride and clipping). Embedded 8x8 bitmap font covers all printable ASCII (32-126) with `get_char_bitmap()` returning per-character row data. Font data adapted from the Python prototype. 43 render utility tests pass covering color conversion, rounded-rect hit-testing (center, corners, edges, zero-radius), all four toast positions plus unknown-position fallback, text width edge cases (empty, NULL), font bitmap lookups (printable, space, fallback to '?'), and fill-rect pixel verification. Total: 189 tests passing.
 

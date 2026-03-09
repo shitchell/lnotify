@@ -4,7 +4,7 @@ LDFLAGS = -lpthread
 
 # Source files (add as created)
 COMMON_SRC = src/log.c src/notification.c src/protocol.c src/config.c src/engine.c src/resolver.c src/queue.c src/render_util.c src/font_bitmap.c src/engine_fb.c src/engine_dbus.c src/engine_queue.c
-DAEMON_SRC = src/daemon/main.c $(COMMON_SRC)
+DAEMON_SRC = src/daemon/main.c src/daemon/socket.c $(COMMON_SRC)
 CLIENT_SRC = src/client/main.c $(COMMON_SRC)
 TEST_SRC   = tests/test_main.c tests/test_notification.c tests/test_protocol.c tests/test_config.c tests/test_resolver.c tests/test_queue.c tests/test_render_util.c $(COMMON_SRC)
 
