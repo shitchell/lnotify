@@ -14,7 +14,7 @@ void test_config_suite(void) {
         ASSERT_EQ(cfg.border_radius, 12, "default border radius");
         ASSERT_EQ(cfg.padding, 20, "default padding");
         ASSERT_EQ(cfg.margin, 30, "default margin");
-        ASSERT_EQ(cfg.font_size, 14, "default font size");
+        ASSERT_EQ(cfg.font_size, 16, "default font size");
 
         // Default colors
         ASSERT_EQ(cfg.bg_color.r, 0x28, "default bg red");
@@ -83,7 +83,7 @@ void test_config_suite(void) {
         ASSERT_EQ(cfg.bg_color.a, 0xFF, "bg alpha");
 
         // Unchanged fields keep defaults
-        ASSERT_EQ(cfg.font_size, 14, "font_size unchanged");
+        ASSERT_EQ(cfg.font_size, 16, "font_size unchanged");
         ASSERT_EQ(cfg.border_radius, 12, "border_radius unchanged");
 
         config_free(&cfg);

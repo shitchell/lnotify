@@ -461,14 +461,26 @@ static void *defense_thread_fn(void *arg) {
             break;
         }
 
-        // Check if we've exceeded timeout/2 for sustained defense
+        // Check elapsed time
         uint64_t now = monotonic_ms();
         uint64_t elapsed = now - defense_start_mono;
-        uint64_t defense_duration = (uint64_t)defense_timeout_ms / 2;
-        if (elapsed > defense_duration) {
-            log_debug("engine_fb: defense duration exceeded, stopping");
+        uint64_t full_timeout = (uint64_t)defense_timeout_ms;
+
+        // Full timeout reached — auto-dismiss
+        if (elapsed >= full_timeout) {
+            log_debug("engine_fb: timeout reached, auto-dismissing");
+            fb_cleanup_unlocked();
+            defense_running = false;
             pthread_mutex_unlock(&fb_mutex);
-            break;
+            return NULL;
+        }
+
+        // Past defense window (timeout/2) — stop defending but keep waiting
+        uint64_t defense_duration = full_timeout / 2;
+        if (elapsed > defense_duration) {
+            pthread_mutex_unlock(&fb_mutex);
+            // Sleep until full timeout, checking for stop every 200ms
+            continue;
         }
 
         if (!fb_map) {

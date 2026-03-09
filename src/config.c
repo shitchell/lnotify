@@ -81,7 +81,7 @@ void config_defaults(lnotify_config *cfg) {
     cfg->default_timeout = 5000;
     cfg->position = strdup("top-right");
     cfg->font_path = strdup("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf");
-    cfg->font_size = 14;
+    cfg->font_size = 16;
 
     config_parse_color("#282828E6", &cfg->bg_color);
     config_parse_color("#FFFFFFFF", &cfg->fg_color);
