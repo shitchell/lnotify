@@ -296,11 +296,7 @@ static bool dbus_exec_cross_user(const char *gdbus_cmd,
                 setenv("DBUS_SESSION_BUS_ADDRESS", dbus_addr, 1);
             }
 
-            // Also set HOME and XDG_RUNTIME_DIR for gdbus
-            char home[128];
-            snprintf(home, sizeof(home), "/home/%d", target_uid);
-            // Try getpwuid-style path first, but the simple /run/user/UID
-            // is what matters most
+            // Set XDG_RUNTIME_DIR for gdbus (needed for session bus access)
             char xdg_dir[64];
             snprintf(xdg_dir, sizeof(xdg_dir), "/run/user/%u", target_uid);
             setenv("XDG_RUNTIME_DIR", xdg_dir, 1);
