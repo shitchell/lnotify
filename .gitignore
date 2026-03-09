@@ -6,3 +6,4 @@ prototype/
 
 # Python bytecode
 __pycache__/
+.worktrees/
