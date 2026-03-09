@@ -5,6 +5,7 @@
 #include "engine_queue.h"
 #include "engine_terminal.h"
 #include "log.h"
+#include "logind.h"
 #include "protocol.h"
 #include "queue.h"
 #include "resolver.h"
@@ -576,6 +577,9 @@ int main(int argc, char *argv[]) {
 
     // Free config
     config_free(&g_config);
+
+    // Close shared sd-bus connection
+    logind_close();
 
     // Remove socket file
     cleanup();
