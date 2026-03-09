@@ -67,6 +67,18 @@ logind data (free) → engine requests probe → probe runs → engine re-evalua
 
 Probes: `HAS_DBUS_NOTIFICATIONS`, `COMPOSITOR_NAME`, `HAS_FRAMEBUFFER`, `TERMINAL_CAPABILITIES`, `FOREGROUND_PROCESS`
 
+### Resolver Loop (`resolver_select`)
+
+The resolver iterates engines in array order (priority order) and selects the first that accepts:
+
+1. Skip engines already marked rejected (rejection bitfield)
+2. Call `engine->detect(ctx)`:
+   - `ENGINE_ACCEPT` — return this engine immediately
+   - `ENGINE_REJECT` — mark rejected in bitfield, continue to next
+   - `ENGINE_NEED_PROBE` — read `ctx->requested_probe`, run the probe if not already completed, then re-evaluate the same engine. If probe was already completed (engine asked again), treat as reject to prevent infinite loops.
+
+The resolver accepts a `probe_fn` callback for dependency injection. Production code passes `context_run_probe`; tests inject a mock that marks probes complete without system calls. Passing NULL defaults to `context_run_probe`.
+
 ## Data Flow
 
 ```
@@ -99,7 +111,9 @@ _Updated as implementation progresses. Files marked with [exists] are implemente
 | `include/config.h` | Config struct (lnotify_color, lnotify_config) and parser | [exists] |
 | `src/config.c` | Config parser: defaults, file loading, color parsing, free | [exists] |
 | `tests/test_config.c` | Config tests (defaults, file parse, colors, whitespace, booleans) | [exists] |
-| `include/resolver.h` | Engine resolver loop | planned |
+| `include/resolver.h` | Engine resolver loop API | [exists] |
+| `src/resolver.c` | Resolver implementation (probe pipeline, rejection tracking) | [exists] |
+| `tests/test_resolver.c` | Resolver tests with mock engines (24 assertions) | [exists] |
 | `src/daemon/main.c` | Daemon entry point, VT monitor, event loop | [exists] (stub) |
 | `src/daemon/socket.c` | Unix socket listener | planned |
 | `src/daemon/ssh_delivery.c` | SSH session discovery and pty delivery | planned |
@@ -117,6 +131,8 @@ _Updated as implementation progresses. Files marked with [exists] are implemente
 **Task 4 complete:** Config parser with `#RRGGBBAA` color support and all v1 config keys. Key=value flat file format, `#` comments, whitespace-tolerant. `config_defaults()` populates all fields from design spec defaults. `config_load()` overrides from file, skipping malformed/unknown lines (logged at debug). `config_free()` cleans up heap strings. 48 config tests pass covering defaults, file parsing, color edge cases, whitespace handling, and boolean parsing.
 
 **Task 5 complete:** Engine vtable (`engine` struct with detect/render/dismiss function pointers), session context struct, and probe infrastructure. `context_init_from_logind()` queries `loginctl` to populate session properties (type, class, user, seat, remote) for a given VT. `context_run_probe()` dispatches probes via switch statement: `PROBE_HAS_DBUS_NOTIFICATIONS` (gdbus introspect), `PROBE_HAS_FRAMEBUFFER` (access check), others stubbed. Probe bitfield prevents redundant work. Tests bypass probes by setting context fields directly (validated in Task 6). `context_free()` cleans up all heap-allocated strings.
+
+**Task 6 complete:** Engine resolver loop (`resolver_select`) iterates engines in priority order, handles `ENGINE_NEED_PROBE` by running probes and re-evaluating, tracks rejections via bitfield, and prevents infinite loops when a probe is already completed. Probe function is injectable via `probe_fn` callback — tests use a mock that marks probes done without system calls; production code passes `context_run_probe` (or NULL to default). 24 resolver tests cover: first-accept, skip-rejected, all-reject, probe-then-accept, probe-negative-fallback, rejected-skipped-after-probe, pre-completed-probe, probe-then-reject, empty list, null probe_fn, and multi-probe scenarios. Total: 136 tests passing.
 
 ## Design References
 

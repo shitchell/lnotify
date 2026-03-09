@@ -12,7 +12,7 @@ int tests_failed = 0;
 extern void test_notification_suite(void);
 extern void test_protocol_suite(void);
 extern void test_config_suite(void);
-// extern void test_resolver_suite(void);
+extern void test_resolver_suite(void);
 // extern void test_queue_suite(void);
 // extern void test_render_util_suite(void);
 
@@ -30,6 +30,7 @@ int main(void) {
     RUN_SUITE(test_notification_suite);
     RUN_SUITE(test_protocol_suite);
     RUN_SUITE(test_config_suite);
+    RUN_SUITE(test_resolver_suite);
 
     fprintf(stderr, "\n===================\n");
     fprintf(stderr, "Results: %d passed, %d failed, %d total\n",
