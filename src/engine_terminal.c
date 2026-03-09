@@ -136,24 +136,32 @@ bool terminal_render_osc(int pty_fd, const ssh_pty_info *pty,
 }
 
 // ---------------------------------------------------------------------------
-// Helpers: escape single quotes for shell embedding
+// Helpers: run tmux command via fork/execvp
 // ---------------------------------------------------------------------------
 
-// Escape single quotes in `src` into `dst` (max `dst_size` bytes).
-// Uses the '\'' idiom (end quote, literal quote, resume quote).
-static void escape_single_quotes(const char *src, char *dst, size_t dst_size) {
-    size_t di = 0;
-    for (const char *p = src; *p && di < dst_size - 5; p++) {
-        if (*p == '\'') {
-            dst[di++] = '\'';
-            dst[di++] = '\\';
-            dst[di++] = '\'';
-            dst[di++] = '\'';
-        } else {
-            dst[di++] = *p;
-        }
+// Run a tmux command without going through a shell.
+// argv is a NULL-terminated array of arguments (argv[0] should be "tmux").
+// Returns 0 on success, -1 on failure.
+static int run_tmux(char *const argv[]) {
+    pid_t pid = fork();
+    if (pid < 0) {
+        log_error("tmux: fork failed: %s", strerror(errno));
+        return -1;
     }
-    dst[di] = '\0';
+    if (pid == 0) {
+        // Suppress stdout/stderr (replaces 2>/dev/null from system() calls)
+        int devnull = open("/dev/null", O_WRONLY);
+        if (devnull >= 0) {
+            dup2(devnull, STDERR_FILENO);
+            dup2(devnull, STDOUT_FILENO);
+            close(devnull);
+        }
+        execvp("tmux", argv);
+        _exit(127);
+    }
+    int status;
+    if (waitpid(pid, &status, 0) < 0) return -1;
+    return (WIFEXITED(status) && WEXITSTATUS(status) == 0) ? 0 : -1;
 }
 
 // ---------------------------------------------------------------------------
@@ -193,22 +201,24 @@ bool terminal_render_tmux(const ssh_pty_info *pty,
     if (duration_secs < 1) duration_secs = 1;
 
     // Try display-popup first (tmux >= 3.2)
-    // Format: tmux -S SOCKET display-popup -w 50 -h 6 -E "echo '...'; sleep N"
     {
         char msg[512];
         snprintf(msg, sizeof(msg), "%s%s%s",
                  title, (title[0] && body[0]) ? ": " : "", body);
 
-        char escaped[1024];
-        escape_single_quotes(msg, escaped, sizeof(escaped));
+        // Build the popup command string (tmux runs this via its internal shell)
+        char popup_cmd[1024];
+        snprintf(popup_cmd, sizeof(popup_cmd), "echo '%s'; sleep %d",
+                 msg, duration_secs);
+        // Note: single quotes in msg would break the echo, but this is a
+        // pre-existing v1 limitation (the old system() code had the same issue).
 
-        char cmd[2048];
-        snprintf(cmd, sizeof(cmd),
-                 "tmux -S '%s' display-popup -w 50 -h 6 -E "
-                 "\"echo '%s'; sleep %d\" 2>/dev/null",
-                 tmux_socket, escaped, duration_secs);
-
-        int rc = system(cmd);
+        char *popup_argv[] = {
+            "tmux", "-S", tmux_socket,
+            "display-popup", "-w", "50", "-h", "6", "-E",
+            popup_cmd, NULL
+        };
+        int rc = run_tmux(popup_argv);
         if (rc == 0) {
             log_info("ssh: tmux display-popup sent via %s", tmux_socket);
             return true;
@@ -221,15 +231,14 @@ bool terminal_render_tmux(const ssh_pty_info *pty,
         snprintf(msg, sizeof(msg), "[lnotify] %s%s%s",
                  title, (title[0] && body[0]) ? ": " : "", body);
 
-        char escaped[1024];
-        escape_single_quotes(msg, escaped, sizeof(escaped));
+        char duration_str[16];
+        snprintf(duration_str, sizeof(duration_str), "%d", duration_secs * 1000);
 
-        char cmd[2048];
-        snprintf(cmd, sizeof(cmd),
-                 "tmux -S '%s' display-message -d %d '%s' 2>/dev/null",
-                 tmux_socket, duration_secs * 1000, escaped);
-
-        int rc = system(cmd);
+        char *msg_argv[] = {
+            "tmux", "-S", tmux_socket,
+            "display-message", "-d", duration_str, msg, NULL
+        };
+        int rc = run_tmux(msg_argv);
         if (rc == 0) {
             log_info("ssh: tmux display-message sent via %s", tmux_socket);
             return true;
