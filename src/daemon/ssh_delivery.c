@@ -1,11 +1,10 @@
 #include "engine_terminal.h"
 #include "log.h"
+#include "logind.h"
 
-#include <ctype.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <grp.h>
-#include <pwd.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -134,79 +133,30 @@ static bool mode_allowed(const char *mode, const char *client_modes,
 
 int ssh_find_qualifying_ptys(const lnotify_config *cfg,
                              ssh_pty_info *ptys, int max_ptys) {
-    // Query loginctl for remote sessions
-    FILE *fp = popen("loginctl list-sessions --no-legend --no-pager "
-                     "2>/dev/null", "r");
-    if (!fp) {
-        log_error("ssh: could not run loginctl");
-        return 0;
-    }
+    logind_session sessions[64];
+    int session_count = logind_list_remote_sessions(sessions, 64);
 
     int count = 0;
-    char line[512];
 
-    while (fgets(line, sizeof(line), fp) && count < max_ptys) {
-        // loginctl list-sessions output format:
-        // SESSION UID USER SEAT TTY
-        // Some systems may differ, so parse carefully
-        char session_id[64] = {0};
-        char *nl = strchr(line, '\n');
-        if (nl) *nl = '\0';
-
-        // Extract session ID (first non-whitespace token)
-        const char *p = line;
-        while (*p && isspace((unsigned char)*p)) p++;
-        size_t i = 0;
-        while (*p && !isspace((unsigned char)*p) && i < sizeof(session_id) - 1) {
-            session_id[i++] = *p++;
-        }
-        session_id[i] = '\0';
-
-        if (!session_id[0]) continue;
-
-        // Query session properties
-        char cmd[256];
-        snprintf(cmd, sizeof(cmd),
-                 "loginctl show-session %s "
-                 "-p Remote -p Name -p Leader -p TTY -p User "
-                 "--value 2>/dev/null",
-                 session_id);
-
-        FILE *sfp = popen(cmd, "r");
-        if (!sfp) continue;
-
-        // Read properties: Remote, Name, Leader, TTY, User (in --value order)
-        char props[5][128];
-        memset(props, 0, sizeof(props));
-        for (int j = 0; j < 5; j++) {
-            if (!fgets(props[j], sizeof(props[j]), sfp)) break;
-            char *pnl = strchr(props[j], '\n');
-            if (pnl) *pnl = '\0';
-        }
-        pclose(sfp);
-
-        const char *remote_str = props[0];  // "yes" or "no"
-        const char *name       = props[1];  // username
-        const char *leader_str = props[2];  // PID
-        const char *tty        = props[3];  // e.g. "pts/3"
-        // props[4] is User (UID as string)
-
-        // Only remote sessions
-        if (strcmp(remote_str, "yes") != 0) continue;
+    for (int i = 0; i < session_count; i++) {
+        logind_session *s = &sessions[i];
 
         // Must have a TTY
-        if (!tty[0]) continue;
+        if (!s->tty || !s->tty[0]) {
+            logind_session_free(s);
+            continue;
+        }
 
-        pid_t leader = (pid_t)atoi(leader_str);
-        if (leader <= 0) continue;
-
-        // Look up uid from username
-        struct passwd *pw = getpwnam(name);
-        if (!pw) continue;
+        pid_t leader = (pid_t)s->leader_pid;
+        if (leader <= 0) {
+            logind_session_free(s);
+            continue;
+        }
 
         // Check user qualification
-        if (!user_qualifies(name, pw->pw_uid, cfg)) {
-            log_debug("ssh: user %s does not qualify", name);
+        if (!user_qualifies(s->username, (uid_t)s->uid, cfg)) {
+            log_debug("ssh: user %s does not qualify", s->username);
+            logind_session_free(s);
             continue;
         }
 
@@ -214,23 +164,31 @@ int ssh_find_qualifying_ptys(const lnotify_config *cfg,
         char *client_modes = get_lnotify_ssh_modes(leader);
         if (client_modes && strcmp(client_modes, "none") == 0) {
             log_debug("ssh: session %s opted out (LNOTIFY_SSH=none)",
-                      session_id);
+                      s->session_id);
             free(client_modes);
+            logind_session_free(s);
             continue;
         }
         free(client_modes);
 
         // Build pty path
         char pty_path[64];
-        if (strncmp(tty, "/dev/", 5) == 0) {
-            snprintf(pty_path, sizeof(pty_path), "%s", tty);
+        if (strncmp(s->tty, "/dev/", 5) == 0) {
+            snprintf(pty_path, sizeof(pty_path), "%s", s->tty);
         } else {
-            snprintf(pty_path, sizeof(pty_path), "/dev/%s", tty);
+            snprintf(pty_path, sizeof(pty_path), "/dev/%s", s->tty);
         }
 
-        // Verify the pty exists and is writable
+        // Verify pty exists and is writable
         if (access(pty_path, W_OK) != 0) {
             log_debug("ssh: %s not writable, skipping", pty_path);
+            logind_session_free(s);
+            continue;
+        }
+
+        // If we've hit max, free remaining and stop adding
+        if (count >= max_ptys) {
+            logind_session_free(s);
             continue;
         }
 
@@ -238,15 +196,16 @@ int ssh_find_qualifying_ptys(const lnotify_config *cfg,
         ssh_pty_info *info = &ptys[count];
         snprintf(info->pty_path, sizeof(info->pty_path), "%s", pty_path);
         info->session_leader = leader;
-        info->uid = pw->pw_uid;
-        snprintf(info->username, sizeof(info->username), "%s", name);
+        info->uid = (uid_t)s->uid;
+        snprintf(info->username, sizeof(info->username), "%s", s->username);
 
         log_debug("ssh: found qualifying pty %s (user=%s, leader=%d)",
-                  pty_path, name, (int)leader);
+                  pty_path, s->username, (int)leader);
         count++;
+
+        logind_session_free(s);
     }
 
-    pclose(fp);
     return count;
 }
 
