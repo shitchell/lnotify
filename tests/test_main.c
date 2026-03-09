@@ -10,7 +10,7 @@ int tests_failed = 0;
 
 // Forward declarations -- each test file provides a suite function
 extern void test_notification_suite(void);
-// extern void test_protocol_suite(void);
+extern void test_protocol_suite(void);
 // extern void test_config_suite(void);
 // extern void test_resolver_suite(void);
 // extern void test_queue_suite(void);
@@ -28,6 +28,7 @@ int main(void) {
 
     RUN_SUITE(test_harness_suite);
     RUN_SUITE(test_notification_suite);
+    RUN_SUITE(test_protocol_suite);
 
     fprintf(stderr, "\n===================\n");
     fprintf(stderr, "Results: %d passed, %d failed, %d total\n",
