@@ -1,7 +1,6 @@
 #include "render_util.h"
 #include "font_bitmap.h"
 #include <string.h>
-#include <math.h>
 
 void color_to_bgra(const lnotify_color *c, uint8_t bgra[4]) {
     bgra[0] = c->b;
