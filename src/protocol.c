@@ -1,8 +1,10 @@
 #include "protocol.h"
 #include <string.h>
 
-// Known field_mask bits — used to ignore unknown bits during deserialization
-#define FIELD_MASK_KNOWN (FIELD_TITLE | FIELD_APP | FIELD_GROUP)
+// Known data field_mask bits — used to parse optional fields during deserialization
+#define FIELD_MASK_DATA (FIELD_TITLE | FIELD_APP | FIELD_GROUP)
+// All known field_mask bits (data + transport flags)
+#define FIELD_MASK_KNOWN (FIELD_MASK_DATA | FIELD_DRY_RUN)
 
 // Helper: write a uint16 to buf (little-endian)
 static void write_u16(uint8_t *buf, uint16_t val) {
@@ -155,9 +157,9 @@ ssize_t protocol_deserialize(const uint8_t *buf, size_t buflen, notification *n)
     if (total_len > buflen) return -1;
     if (total_len < PROTOCOL_HEADER_SIZE) return -1;
 
-    // Read field_mask (ignore unknown bits)
+    // Read field_mask — separate data fields from transport flags
     uint16_t field_mask = read_u16(buf + pos); pos += 2;
-    uint16_t known_mask = field_mask & FIELD_MASK_KNOWN;
+    uint16_t known_mask = field_mask & FIELD_MASK_DATA;
 
     // Read fixed fields
     n->priority   = buf[pos];                pos += 1;

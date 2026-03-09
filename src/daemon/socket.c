@@ -65,13 +65,16 @@ int socket_listen(const char *path) {
     return fd;
 }
 
-int socket_handle_client(int client_fd, notification *out) {
+int socket_handle_client(int client_fd, notification *out,
+                          uint16_t *out_field_mask) {
     memset(out, 0, sizeof(*out));
+    if (out_field_mask) *out_field_mask = 0;
 
     uint8_t buf[MAX_MSG_SIZE];
     ssize_t total = 0;
 
-    // Read all data — client writes then closes (fire-and-forget)
+    // Read all data — client writes then shuts down write end
+    // (shutdown SHUT_WR for dry-run so we can respond, or close for fire-and-forget)
     for (;;) {
         ssize_t n = read(client_fd, buf + total, (size_t)(MAX_MSG_SIZE - total));
         if (n < 0) {
@@ -80,7 +83,7 @@ int socket_handle_client(int client_fd, notification *out) {
             close(client_fd);
             return -1;
         }
-        if (n == 0) break;  // client closed connection
+        if (n == 0) break;  // client closed/shutdown write end
         total += n;
         if (total >= MAX_MSG_SIZE) {
             log_error("client message too large (>%d bytes)", MAX_MSG_SIZE);
@@ -93,6 +96,11 @@ int socket_handle_client(int client_fd, notification *out) {
         log_debug("client sent empty message");
         close(client_fd);
         return -1;
+    }
+
+    // Extract raw field_mask before deserialization (for transport flags)
+    if (out_field_mask) {
+        *out_field_mask = protocol_peek_field_mask(buf, (size_t)total);
     }
 
     // Deserialize
@@ -128,7 +136,8 @@ int socket_handle_client(int client_fd, notification *out) {
              out->group_id ? out->group_id : "(none)",
              out->origin_uid);
 
-    close(client_fd);
+    // Caller is responsible for closing client_fd on success
+    // (needed for dry-run to write response back before closing)
     return 0;
 }
 

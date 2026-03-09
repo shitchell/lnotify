@@ -173,9 +173,45 @@ _Updated as implementation progresses. Files marked with [exists] are implemente
 
 **Task 15 complete:** SSH terminal engine and delivery system. Three new files: `engine_terminal.h` (header with `ssh_pty_info` struct, rendering tier APIs, and `ssh_deliver()` entry point), `engine_terminal.c` (4-tier rendering: OSC 9/777 escape sequences for iTerm2/WezTerm/kitty/rxvt, tmux display-popup with display-message fallback, cursor overlay with ANSI box at top-right and auto-dismiss via forked child, plain text with styled ANSI line), `ssh_delivery.c` (session discovery via `loginctl list-sessions` filtering for remote sessions, user/group qualification checking, `LNOTIFY_SSH` env var parsing for client-side mode control, fullscreen app detection via `/proc/{pid}/stat` tpgid + `/proc/{tpgid}/comm` matched against `ssh_fullscreen_apps` config). The terminal engine is NOT a primary VT engine -- `ssh_deliver()` is called by the daemon after primary engine dispatch, making SSH delivery additive. Daemon `main.c` updated: loads `lnotify_config` from config file on startup, calls `ssh_deliver()` after every notification dispatch. Config path resolution: system mode uses `/etc/lnotify.conf`, user mode uses `$XDG_CONFIG_HOME/lnotify/config` (falling back to `~/.config/lnotify/config`). Manual test script covers 8 scenarios: localhost SSH, tmux tier, cursor overlay, plain text forcing, opt-out, fullscreen detection, `script` capture, and user filtering in system mode. All 189 existing tests still pass.
 
+**Task 17 complete:** Dry-run mode (`--dry-run`). Client sets `FIELD_DRY_RUN` bit (1 << 7) in the wire format's field_mask, uses `shutdown(SHUT_WR)` for half-close, and reads the daemon's diagnostic response. Daemon detects the flag via `protocol_peek_field_mask()`, runs the full resolver pipeline (including probes), formats VT/session/probe/engine/SSH diagnostic text, writes it back on the client socket, and skips rendering. Transport-level concern: `FIELD_DRY_RUN` lives only in the wire format, not in the notification struct. `socket_handle_client()` updated to return raw field_mask and leave the client fd open on success (caller closes). Probe state is restored after dry-run evaluation. All 189 unit tests + 20 integration tests pass.
+
 **Task 16 complete:** Integration testing. Shell-based end-to-end test script (`tests/test_integration.sh`) that validates the full daemon lifecycle without root or hardware: build, start daemon with custom socket path (via `XDG_RUNTIME_DIR` override), wait for socket ready, send notifications via CLI client, verify receipt in daemon logs, test all field types (title, body, priority, app, group_id, timeout), verify engine selection occurs, test dedup with group_id, verify expiration timeout preservation, test multiple rapid notifications, verify client error handling (missing daemon, missing body), verify clean shutdown (SIGTERM, socket removal, exit message). Also: comprehensive manual test README (`tests/manual/README.md`) documenting all four manual test scripts with prerequisites, exact procedures, expected outputs, and golden file capture instructions. 20/20 integration tests pass.
 
 **Task 8 complete:** Shared rendering utilities that engines compose from. Pure functions with no side effects: `color_to_bgra` (RGBA-to-BGRA conversion for framebuffer byte order), `point_in_rounded_rect` (hit-test with corner arc clipping), `compute_toast_geometry` (position string to screen coordinates with margin), `text_width` (string width at given scale using 8x8 font), `render_fill_rect` (solid rectangle fill into a BGRA buffer with stride and clipping). Embedded 8x8 bitmap font covers all printable ASCII (32-126) with `get_char_bitmap()` returning per-character row data. Font data adapted from the Python prototype. 43 render utility tests pass covering color conversion, rounded-rect hit-testing (center, corners, edges, zero-radius), all four toast positions plus unknown-position fallback, text width edge cases (empty, NULL), font bitmap lookups (printable, space, fallback to '?'), and fill-rect pixel verification. Total: 189 tests passing.
+
+## Dry-Run Mode
+
+`lnotify --dry-run BODY` connects to the daemon, which evaluates engines and responds with diagnostic text instead of rendering.
+
+### Protocol
+
+The `FIELD_DRY_RUN` bit (`1 << 7`) is a transport-level flag in the wire format's `field_mask`. It does not affect the notification struct -- the daemon detects it via `protocol_peek_field_mask()` on the raw buffer before deserialization.
+
+### Client Behavior
+
+1. Serializes normally, then sets `FIELD_DRY_RUN` bit in the buffer's field_mask
+2. Writes the message, then calls `shutdown(fd, SHUT_WR)` (half-close) so the daemon sees EOF on read but the socket stays open for reading the response
+3. Reads and prints the daemon's diagnostic text to stdout
+
+### Daemon Behavior
+
+When `FIELD_DRY_RUN` is detected in the field_mask:
+
+1. Builds session context (same as normal)
+2. Runs the resolver loop (same as normal -- probes execute)
+3. Queries SSH qualifying ptys (same as normal)
+4. Formats a diagnostic text response:
+   ```
+   VT: tty3
+   Session: wayland, user, uid=1000, user=guy
+   Probes run: HAS_DBUS_NOTIFICATIONS=true
+   Engine selected: dbus
+   SSH targets: (none)
+   ```
+5. Writes the response back on the client socket, then closes it
+6. Does NOT call `engine->render()` or `ssh_deliver()`
+
+Probe state is restored after dry-run evaluation so subsequent real notifications are not affected.
 
 ## Design References
 

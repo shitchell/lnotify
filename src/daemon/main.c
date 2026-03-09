@@ -5,6 +5,7 @@
 #include "engine_queue.h"
 #include "engine_terminal.h"
 #include "log.h"
+#include "protocol.h"
 #include "queue.h"
 #include "resolver.h"
 #include "socket.h"
@@ -12,6 +13,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <poll.h>
+#include <pwd.h>
 #include <signal.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -101,6 +103,153 @@ static uint32_t read_vt_number(int sysfs_fd) {
 
     uint32_t vt = (uint32_t)atoi(p);
     return vt;
+}
+
+// ---------------------------------------------------------------------------
+// Probe name lookup
+// ---------------------------------------------------------------------------
+
+static const char *probe_name(probe_key key) {
+    switch (key) {
+    case PROBE_HAS_DBUS_NOTIFICATIONS: return "HAS_DBUS_NOTIFICATIONS";
+    case PROBE_COMPOSITOR_NAME:        return "COMPOSITOR_NAME";
+    case PROBE_HAS_FRAMEBUFFER:        return "HAS_FRAMEBUFFER";
+    case PROBE_TERMINAL_CAPABILITIES:  return "TERMINAL_CAPABILITIES";
+    case PROBE_FOREGROUND_PROCESS:     return "FOREGROUND_PROCESS";
+    default:                           return "UNKNOWN";
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Dry-run handler
+// ---------------------------------------------------------------------------
+
+// Handle a dry-run request: run the engine resolver without rendering,
+// format diagnostic output, and write it back to the client socket.
+static void handle_dry_run(int client_fd, notification *notif,
+                            session_context *ctx) {
+    (void)notif;  // notification content not needed for dry-run output
+
+    char response[4096];
+    int pos = 0;
+    int remaining = (int)sizeof(response);
+
+    // VT info
+    if (ctx->vt > 0) {
+        pos += snprintf(response + pos, (size_t)remaining,
+                        "VT: tty%u\n", ctx->vt);
+    } else {
+        pos += snprintf(response + pos, (size_t)remaining,
+                        "VT: (unknown)\n");
+    }
+    remaining = (int)sizeof(response) - pos;
+
+    // Session info
+    {
+        const char *stype = ctx->session_type ? ctx->session_type : "(unknown)";
+        const char *sclass = ctx->session_class ? ctx->session_class : "(unknown)";
+        const char *username = ctx->username ? ctx->username : "(unknown)";
+        pos += snprintf(response + pos, (size_t)remaining,
+                        "Session: %s, %s, uid=%u, user=%s\n",
+                        stype, sclass, ctx->uid, username);
+        remaining = (int)sizeof(response) - pos;
+    }
+
+    // Probes run
+    {
+        pos += snprintf(response + pos, (size_t)remaining, "Probes run:");
+        remaining = (int)sizeof(response) - pos;
+
+        // Save original probe state to detect what resolver adds
+        uint32_t probes_before = ctx->probes_completed;
+
+        // Run resolver to select an engine (dry-run — we won't call render)
+        engine *eng = resolver_select(engines, engine_count, ctx, NULL);
+
+        // Report all completed probes (including newly run ones)
+        bool any_probe = false;
+        for (int k = 0; k < PROBE_COUNT; k++) {
+            if (ctx->probes_completed & (1u << k)) {
+                const char *pname = probe_name((probe_key)k);
+                // Show probe result
+                const char *val = "?";
+                switch ((probe_key)k) {
+                case PROBE_HAS_DBUS_NOTIFICATIONS:
+                    val = ctx->has_dbus_notifications ? "true" : "false";
+                    break;
+                case PROBE_HAS_FRAMEBUFFER:
+                    val = ctx->has_framebuffer ? "true" : "false";
+                    break;
+                case PROBE_COMPOSITOR_NAME:
+                    val = ctx->compositor_name ? ctx->compositor_name : "(null)";
+                    break;
+                case PROBE_TERMINAL_CAPABILITIES:
+                    val = ctx->terminal_type ? ctx->terminal_type : "(null)";
+                    break;
+                case PROBE_FOREGROUND_PROCESS:
+                    val = ctx->foreground_process ? ctx->foreground_process : "(null)";
+                    break;
+                default:
+                    break;
+                }
+                pos += snprintf(response + pos, (size_t)(remaining),
+                                " %s=%s", pname, val);
+                remaining = (int)sizeof(response) - pos;
+                any_probe = true;
+            }
+        }
+        if (!any_probe) {
+            pos += snprintf(response + pos, (size_t)remaining, " (none)");
+            remaining = (int)sizeof(response) - pos;
+        }
+        pos += snprintf(response + pos, (size_t)remaining, "\n");
+        remaining = (int)sizeof(response) - pos;
+
+        // Restore original probe state (dry-run should be side-effect-free
+        // for subsequent notifications — probes will be re-run as needed)
+        ctx->probes_completed = probes_before;
+
+        // Engine selected
+        pos += snprintf(response + pos, (size_t)remaining,
+                        "Engine selected: %s\n",
+                        eng ? eng->name : "(none — would queue)");
+        remaining = (int)sizeof(response) - pos;
+    }
+
+    // SSH targets
+    {
+        ssh_pty_info ptys[64];
+        int ssh_count = ssh_find_qualifying_ptys(&g_config, ptys, 64);
+        if (ssh_count > 0) {
+            for (int i = 0; i < ssh_count; i++) {
+                // Determine which modes would be used
+                const char *modes = g_config.ssh_modes ? g_config.ssh_modes : "osc,overlay,text";
+                pos += snprintf(response + pos, (size_t)remaining,
+                                "SSH target: %s@%s (modes: %s)\n",
+                                ptys[i].username, ptys[i].pty_path, modes);
+                remaining = (int)sizeof(response) - pos;
+            }
+        } else {
+            pos += snprintf(response + pos, (size_t)remaining,
+                            "SSH targets: (none)\n");
+            remaining = (int)sizeof(response) - pos;
+        }
+    }
+
+    // Write response back to client
+    ssize_t total_written = 0;
+    while (total_written < pos) {
+        ssize_t n = write(client_fd, response + total_written,
+                          (size_t)(pos - total_written));
+        if (n < 0) {
+            if (errno == EINTR) continue;
+            log_error("dry-run write: %s", strerror(errno));
+            break;
+        }
+        total_written += n;
+    }
+
+    log_info("dry-run response sent (%d bytes)", pos);
 }
 
 // ---------------------------------------------------------------------------
@@ -342,15 +491,26 @@ int main(int argc, char *argv[]) {
             }
 
             notification notif;
-            if (socket_handle_client(client_fd, &notif) == 0) {
-                dispatch_notification(&notif, &ctx);
+            uint16_t field_mask = 0;
+            if (socket_handle_client(client_fd, &notif, &field_mask) == 0) {
 
-                // SSH delivery is additive — runs alongside primary engine
-                int ssh_count = ssh_deliver(&notif, &g_config);
-                if (ssh_count > 0) {
-                    log_info("ssh: delivered to %d session(s)", ssh_count);
+                if (field_mask & FIELD_DRY_RUN) {
+                    // Dry-run: run resolver but don't render — send diagnostic
+                    // text back to client
+                    log_info("dry-run request received");
+                    handle_dry_run(client_fd, &notif, &ctx);
+                } else {
+                    // Normal dispatch
+                    dispatch_notification(&notif, &ctx);
+
+                    // SSH delivery is additive — runs alongside primary engine
+                    int ssh_count = ssh_deliver(&notif, &g_config);
+                    if (ssh_count > 0) {
+                        log_info("ssh: delivered to %d session(s)", ssh_count);
+                    }
                 }
 
+                close(client_fd);
                 notification_free(&notif);
             }
         }

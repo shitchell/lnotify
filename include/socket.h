@@ -9,10 +9,14 @@
 int socket_listen(const char *path);
 
 // Read message from client, deserialize, capture origin_uid via SO_PEERCRED,
-// set ts_received and ts_mono. Logs the notification and closes the fd.
-// On success, populates *out and returns 0 (caller must notification_free).
-// On failure, returns -1 and *out is zeroed.
-int socket_handle_client(int client_fd, notification *out);
+// set ts_received and ts_mono. Logs the notification.
+// On success, populates *out and returns 0 (caller must notification_free
+// and close client_fd). If out_field_mask is non-NULL, the raw field_mask
+// from the wire message is written there (for detecting transport flags
+// like FIELD_DRY_RUN).
+// On failure, closes client_fd, returns -1 and *out is zeroed.
+int socket_handle_client(int client_fd, notification *out,
+                          uint16_t *out_field_mask);
 
 // Return default socket path. system_mode=true: "/run/lnotify.sock".
 // Otherwise: "$XDG_RUNTIME_DIR/lnotify.sock" (fallback "/tmp/lnotify.sock").

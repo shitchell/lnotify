@@ -129,12 +129,6 @@ int main(int argc, char *argv[]) {
     }
     const char *body = argv[optind];
 
-    // Handle --dry-run (stub for Task 17)
-    if (dry_run) {
-        fprintf(stderr, "dry-run mode not yet implemented\n");
-        return 0;
-    }
-
     // Resolve socket path
     if (!socket_path) {
         socket_path = socket_default_path(system_mode);
@@ -155,6 +149,15 @@ int main(int argc, char *argv[]) {
         fprintf(stderr, "error: failed to serialize notification\n");
         notification_free(&notif);
         return 1;
+    }
+
+    // If dry-run, set the FIELD_DRY_RUN bit in the serialized field_mask.
+    // field_mask is at offset 4 (after uint32 total_len), little-endian uint16.
+    if (dry_run && msg_len >= PROTOCOL_HEADER_SIZE) {
+        uint16_t field_mask;
+        memcpy(&field_mask, buf + 4, 2);
+        field_mask |= FIELD_DRY_RUN;
+        memcpy(buf + 4, &field_mask, 2);
     }
 
     // Connect to daemon socket
@@ -189,7 +192,7 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    // Write serialized data (fire-and-forget)
+    // Write serialized data
     ssize_t total_written = 0;
     while (total_written < msg_len) {
         ssize_t n = write(fd, buf + total_written, (size_t)(msg_len - total_written));
@@ -201,6 +204,32 @@ int main(int argc, char *argv[]) {
             return 1;
         }
         total_written += n;
+    }
+
+    if (dry_run) {
+        // Signal end of request so daemon reads EOF, but keep socket open
+        // for reading the response
+        shutdown(fd, SHUT_WR);
+
+        // Read and print the daemon's diagnostic response
+        char rbuf[4096];
+        ssize_t total_read = 0;
+        for (;;) {
+            ssize_t n = read(fd, rbuf + total_read,
+                             sizeof(rbuf) - 1 - (size_t)total_read);
+            if (n < 0) {
+                if (errno == EINTR) continue;
+                fprintf(stderr, "error: read(): %s\n", strerror(errno));
+                break;
+            }
+            if (n == 0) break;
+            total_read += n;
+            if ((size_t)total_read >= sizeof(rbuf) - 1) break;
+        }
+        if (total_read > 0) {
+            rbuf[total_read] = '\0';
+            printf("%s", rbuf);
+        }
     }
 
     close(fd);
