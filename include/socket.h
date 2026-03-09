@@ -1,6 +1,7 @@
 #ifndef LNOTIFY_SOCKET_H
 #define LNOTIFY_SOCKET_H
 
+#include "lnotify.h"
 #include <stdbool.h>
 
 // Create AF_UNIX socket, bind, listen. Returns socket fd, or -1 on error.
@@ -8,8 +9,10 @@
 int socket_listen(const char *path);
 
 // Read message from client, deserialize, capture origin_uid via SO_PEERCRED,
-// set ts_received and ts_mono. Logs the notification, then frees and closes.
-void socket_handle_client(int client_fd);
+// set ts_received and ts_mono. Logs the notification and closes the fd.
+// On success, populates *out and returns 0 (caller must notification_free).
+// On failure, returns -1 and *out is zeroed.
+int socket_handle_client(int client_fd, notification *out);
 
 // Return default socket path. system_mode=true: "/run/lnotify.sock".
 // Otherwise: "$XDG_RUNTIME_DIR/lnotify.sock" (fallback "/tmp/lnotify.sock").

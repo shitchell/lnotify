@@ -65,7 +65,9 @@ int socket_listen(const char *path) {
     return fd;
 }
 
-void socket_handle_client(int client_fd) {
+int socket_handle_client(int client_fd, notification *out) {
+    memset(out, 0, sizeof(*out));
+
     uint8_t buf[MAX_MSG_SIZE];
     ssize_t total = 0;
 
@@ -76,60 +78,58 @@ void socket_handle_client(int client_fd) {
             if (errno == EINTR) continue;
             log_error("read from client: %s", strerror(errno));
             close(client_fd);
-            return;
+            return -1;
         }
         if (n == 0) break;  // client closed connection
         total += n;
         if (total >= MAX_MSG_SIZE) {
             log_error("client message too large (>%d bytes)", MAX_MSG_SIZE);
             close(client_fd);
-            return;
+            return -1;
         }
     }
 
     if (total == 0) {
         log_debug("client sent empty message");
         close(client_fd);
-        return;
+        return -1;
     }
 
     // Deserialize
-    notification notif;
-    memset(&notif, 0, sizeof(notif));
-    ssize_t consumed = protocol_deserialize(buf, (size_t)total, &notif);
+    ssize_t consumed = protocol_deserialize(buf, (size_t)total, out);
     if (consumed < 0) {
         log_error("protocol_deserialize failed");
         close(client_fd);
-        return;
+        return -1;
     }
 
     // Capture origin_uid via SO_PEERCRED
     struct ucred cred;
     socklen_t cred_len = sizeof(cred);
     if (getsockopt(client_fd, SOL_SOCKET, SO_PEERCRED, &cred, &cred_len) == 0) {
-        notif.origin_uid = (uint32_t)cred.uid;
+        out->origin_uid = (uint32_t)cred.uid;
         log_debug("client uid=%u pid=%d", cred.uid, cred.pid);
     } else {
         log_error("getsockopt(SO_PEERCRED): %s", strerror(errno));
-        notif.origin_uid = 0;
+        out->origin_uid = 0;
     }
 
     // Set daemon-side timestamps
-    notif.ts_received = wallclock_ms();
-    notif.ts_mono = monotonic_ms();
+    out->ts_received = wallclock_ms();
+    out->ts_mono = monotonic_ms();
 
-    // Log the notification (dispatching to resolver happens in Task 14)
+    // Log the notification
     log_info("received notification: title=\"%s\" body=\"%s\" priority=%u timeout=%d app=\"%s\" group=\"%s\" uid=%u",
-             notif.title ? notif.title : "(none)",
-             notif.body ? notif.body : "(none)",
-             notif.priority,
-             notif.timeout_ms,
-             notif.app ? notif.app : "(none)",
-             notif.group_id ? notif.group_id : "(none)",
-             notif.origin_uid);
+             out->title ? out->title : "(none)",
+             out->body ? out->body : "(none)",
+             out->priority,
+             out->timeout_ms,
+             out->app ? out->app : "(none)",
+             out->group_id ? out->group_id : "(none)",
+             out->origin_uid);
 
-    notification_free(&notif);
     close(client_fd);
+    return 0;
 }
 
 const char *socket_default_path(bool system_mode) {
