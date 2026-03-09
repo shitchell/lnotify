@@ -40,4 +40,8 @@ notification *queue_pop_live(notif_queue *q);
 // Return current queue size
 size_t queue_size(notif_queue *q);
 
+// Global notification queue (used by daemon and engines for fallback delivery).
+// Must be initialized with queue_init() before use.
+extern notif_queue g_queue;
+
 #endif

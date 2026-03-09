@@ -1,6 +1,9 @@
 #include "queue.h"
 #include <string.h>
 
+// Global notification queue instance
+notif_queue g_queue;
+
 // Deep-copy a notification into a freshly allocated node
 static notif_node *node_from_notif(const notification *n) {
     notif_node *node = calloc(1, sizeof(*node));
