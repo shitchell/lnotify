@@ -12,6 +12,7 @@ typedef struct {
     char    *session_class; // "user", "greeter"
     char    *username;
     char    *seat;          // "seat0"
+    char    *tty;           // "pts/3" (remote sessions)
     uint32_t uid;
     uint32_t leader_pid;
     uint32_t vt;

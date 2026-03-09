@@ -34,6 +34,7 @@ void logind_session_free(logind_session *s) {
     free(s->session_class);  s->session_class = NULL;
     free(s->username);       s->username = NULL;
     free(s->seat);           s->seat = NULL;
+    free(s->tty);            s->tty = NULL;
 }
 
 int logind_get_session_by_vt(uint32_t vt, logind_session *out) {
@@ -144,7 +145,109 @@ finish:
 }
 
 int logind_list_remote_sessions(logind_session *out, int max) {
-    (void)out;
-    (void)max;
-    return 0;  // Stub — implemented in Task 3
+    if (!out || max <= 0) return 0;
+
+    sd_bus *bus = get_system_bus();
+    if (!bus) return 0;
+
+    sd_bus_error error = SD_BUS_ERROR_NULL;
+    sd_bus_message *reply = NULL;
+    int count = 0;
+
+    // Call ListSessions -> a(susso)
+    int r = sd_bus_call_method(bus,
+        "org.freedesktop.login1",
+        "/org/freedesktop/login1",
+        "org.freedesktop.login1.Manager",
+        "ListSessions",
+        &error, &reply, "");
+    if (r < 0) {
+        log_error("logind: ListSessions failed: %s", error.message);
+        goto finish;
+    }
+
+    r = sd_bus_message_enter_container(reply, 'a', "(susso)");
+    if (r < 0) {
+        log_error("logind: failed to parse ListSessions reply: %s", strerror(-r));
+        goto finish;
+    }
+
+    while (count < max && sd_bus_message_enter_container(reply, 'r', "susso") > 0) {
+        const char *sid = NULL, *user = NULL, *seat = NULL, *obj = NULL;
+        uint32_t uid = 0;
+
+        r = sd_bus_message_read(reply, "susso", &sid, &uid, &user, &seat, &obj);
+        if (r < 0) {
+            sd_bus_message_exit_container(reply);
+            continue;
+        }
+
+        // Query Remote — skip non-remote sessions
+        sd_bus_error remote_error = SD_BUS_ERROR_NULL;
+        int remote_val = 0;
+        r = sd_bus_get_property_trivial(bus,
+            "org.freedesktop.login1", obj,
+            "org.freedesktop.login1.Session", "Remote",
+            &remote_error, 'b', &remote_val);
+        sd_bus_error_free(&remote_error);
+
+        if (r < 0 || !remote_val) {
+            sd_bus_message_exit_container(reply);
+            continue;
+        }
+
+        // Remote session found — populate the output struct
+        logind_session *s = &out[count];
+        memset(s, 0, sizeof(*s));
+        s->session_id = strdup(sid);
+        s->uid = uid;
+        s->username = strdup(user);
+        s->seat = strdup(seat);
+        s->remote = true;
+
+        // Query Type
+        sd_bus_error type_error = SD_BUS_ERROR_NULL;
+        r = sd_bus_get_property_string(bus,
+            "org.freedesktop.login1", obj,
+            "org.freedesktop.login1.Session", "Type",
+            &type_error, &s->type);
+        sd_bus_error_free(&type_error);
+        if (r < 0) s->type = strdup("unknown");
+
+        // Query Class
+        sd_bus_error class_error = SD_BUS_ERROR_NULL;
+        r = sd_bus_get_property_string(bus,
+            "org.freedesktop.login1", obj,
+            "org.freedesktop.login1.Session", "Class",
+            &class_error, &s->session_class);
+        sd_bus_error_free(&class_error);
+        if (r < 0) s->session_class = strdup("unknown");
+
+        // Query Leader
+        sd_bus_error leader_error = SD_BUS_ERROR_NULL;
+        r = sd_bus_get_property_trivial(bus,
+            "org.freedesktop.login1", obj,
+            "org.freedesktop.login1.Session", "Leader",
+            &leader_error, 'u', &s->leader_pid);
+        sd_bus_error_free(&leader_error);
+
+        // Query TTY
+        sd_bus_error tty_error = SD_BUS_ERROR_NULL;
+        r = sd_bus_get_property_string(bus,
+            "org.freedesktop.login1", obj,
+            "org.freedesktop.login1.Session", "TTY",
+            &tty_error, &s->tty);
+        sd_bus_error_free(&tty_error);
+        if (r < 0) s->tty = NULL;
+
+        count++;
+        sd_bus_message_exit_container(reply);
+    }
+
+    sd_bus_message_exit_container(reply);
+
+finish:
+    sd_bus_error_free(&error);
+    sd_bus_message_unref(reply);
+    return count;
 }
