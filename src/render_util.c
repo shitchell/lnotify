@@ -1,5 +1,4 @@
 #include "render_util.h"
-#include "font_bitmap.h"
 #include <string.h>
 
 void color_to_bgra(const lnotify_color *c, uint8_t bgra[4]) {
@@ -90,12 +89,6 @@ void compute_toast_geometry(toast_geometry *geom,
 
     geom->x = left ? margin : (screen_w - toast_w - margin);
     geom->y = top  ? margin : (screen_h - toast_h - margin);
-}
-
-int text_width(const char *text, int scale) {
-    if (!text) return 0;
-    int len = (int)strlen(text);
-    return len * FONT_WIDTH * scale;
 }
 
 void render_fill_rect(uint8_t *buf, int stride, int buf_w, int buf_h,

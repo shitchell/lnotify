@@ -1,6 +1,6 @@
 #include "engine_fb.h"
 #include "config.h"
-#include "font_bitmap.h"
+#include "font.h"
 #include "log.h"
 #include "lnotify.h"
 #include "queue.h"
@@ -99,49 +99,6 @@ static engine_detect_result fb_detect(session_context *ctx) {
 //  Drawing helpers
 // -------------------------------------------------------------------
 
-// Draw a single character at (x, y) in the framebuffer with the given color
-// and scale factor.
-static void fb_draw_char(char ch, int x, int y, int scale,
-                          const lnotify_color *color) {
-    const uint8_t *bitmap = get_char_bitmap(ch);
-    uint8_t bgra[4];
-    color_to_bgra(color, bgra);
-
-    for (int row = 0; row < FONT_HEIGHT; row++) {
-        uint8_t bits = bitmap[row];
-        for (int col = 0; col < FONT_WIDTH; col++) {
-            if (bits & (0x80 >> col)) {
-                // Fill a scale x scale block
-                for (int sy = 0; sy < scale; sy++) {
-                    int py = y + row * scale + sy;
-                    if (py < 0 || py >= fb_height) continue;
-                    uint8_t *row_ptr = fb_map + py * fb_stride;
-                    for (int sx = 0; sx < scale; sx++) {
-                        int px = x + col * scale + sx;
-                        if (px < 0 || px >= fb_width) continue;
-                        uint8_t *pixel = row_ptr + px * 4;
-                        pixel[0] = bgra[0];
-                        pixel[1] = bgra[1];
-                        pixel[2] = bgra[2];
-                        pixel[3] = bgra[3];
-                    }
-                }
-            }
-        }
-    }
-}
-
-// Draw a string at (x, y) in the framebuffer.
-static void fb_draw_text(const char *text, int x, int y, int scale,
-                          const lnotify_color *color) {
-    if (!text) return;
-    int cx = x;
-    for (const char *p = text; *p; p++) {
-        fb_draw_char(*p, cx, y, scale, color);
-        cx += FONT_WIDTH * scale;
-    }
-}
-
 // Draw a rounded rectangle (filled) directly into the framebuffer.
 static void fb_draw_rounded_rect(int rx, int ry, int rw, int rh,
                                   int radius, const lnotify_color *color) {
@@ -216,17 +173,18 @@ static void fb_draw_rounded_border(int rx, int ry, int rw, int rh,
 // Must be called before fb_draw_toast and fb_save_region.
 static void fb_compute_geometry(const notification *notif,
                                  const lnotify_config *cfg) {
-    int title_scale = cfg->font_size / FONT_HEIGHT;
-    if (title_scale < 1) title_scale = 1;
-    int body_scale = title_scale > 1 ? title_scale - 1 : 1;
+    int title_px = cfg->font_size;
+    if (title_px < 8) title_px = 8;
+    int body_px = cfg->font_size * 3 / 4;
+    if (body_px < 8) body_px = 8;
 
-    int title_h = FONT_HEIGHT * title_scale;
-    int body_h  = FONT_HEIGHT * body_scale;
+    int title_h = title_px;
+    int body_h  = body_px;
     int line_spacing = body_h / 2;
     if (line_spacing < 2) line_spacing = 2;
 
-    int title_w = text_width(notif->title, title_scale);
-    int body_w  = text_width(notif->body, body_scale);
+    int title_w = g_font.text_width(notif->title, title_px);
+    int body_w  = g_font.text_width(notif->body, body_px);
     int content_w = title_w > body_w ? title_w : body_w;
     int content_h = 0;
     if (notif->title) {
@@ -248,12 +206,13 @@ static void fb_compute_geometry(const notification *notif,
 // fb_compute_geometry first).
 static void fb_draw_toast(const notification *notif,
                            const lnotify_config *cfg) {
-    int title_scale = cfg->font_size / FONT_HEIGHT;
-    if (title_scale < 1) title_scale = 1;
-    int body_scale = title_scale > 1 ? title_scale - 1 : 1;
+    int title_px = cfg->font_size;
+    if (title_px < 8) title_px = 8;
+    int body_px = cfg->font_size * 3 / 4;
+    if (body_px < 8) body_px = 8;
 
-    int title_h = FONT_HEIGHT * title_scale;
-    int body_h  = FONT_HEIGHT * body_scale;
+    int title_h = title_px;
+    int body_h  = body_px;
     int line_spacing = body_h / 2;
     if (line_spacing < 2) line_spacing = 2;
 
@@ -275,10 +234,12 @@ static void fb_draw_toast(const notification *notif,
     int text_y = saved_geom.y + cfg->border_width + cfg->padding;
 
     if (notif->title) {
-        fb_draw_text(notif->title, text_x, text_y, title_scale, &cfg->fg_color);
+        g_font.draw_text(fb_map, fb_width, fb_height, fb_stride,
+                         notif->title, text_x, text_y, title_px, &cfg->fg_color);
         text_y += title_h + line_spacing;
     }
-    fb_draw_text(notif->body, text_x, text_y, body_scale, &cfg->fg_color);
+    g_font.draw_text(fb_map, fb_width, fb_height, fb_stride,
+                     notif->body, text_x, text_y, body_px, &cfg->fg_color);
 }
 
 // -------------------------------------------------------------------

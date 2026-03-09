@@ -34,10 +34,6 @@ void compute_toast_geometry(toast_geometry *geom,
                             int toast_w, int toast_h,
                             int margin);
 
-// Calculate the pixel width of a text string rendered with the bitmap font
-// at the given scale factor. Returns 0 for NULL or empty strings.
-int text_width(const char *text, int scale);
-
 // Fill a solid rectangle in a BGRA framebuffer.
 // buf: pixel buffer (BGRA, 4 bytes per pixel), row stride = stride bytes.
 // stride: bytes per row (typically buf_w * 4 for BGRA).

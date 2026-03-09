@@ -4,6 +4,7 @@
 #include "engine_fb.h"
 #include "engine_queue.h"
 #include "engine_terminal.h"
+#include "font.h"
 #include "log.h"
 #include "logind.h"
 #include "protocol.h"
@@ -378,6 +379,9 @@ int main(int argc, char *argv[]) {
         }
     }
 
+    // Initialize font backend (after config so font_path is available)
+    font_init(g_config.font_path);
+
     // Log engine registry
     log_info("registered %d engines:", engine_count);
     for (int i = 0; i < engine_count; i++) {
@@ -574,6 +578,9 @@ int main(int argc, char *argv[]) {
 
     // Destroy queue (frees any remaining notifications)
     queue_destroy(&g_queue);
+
+    // Clean up font backend
+    font_cleanup();
 
     // Free config
     config_free(&g_config);

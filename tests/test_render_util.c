@@ -1,4 +1,5 @@
 #include "render_util.h"
+#include "font.h"
 #include "font_bitmap.h"
 #include "config.h"
 #include <string.h>
@@ -120,27 +121,30 @@ void test_render_util_suite(void) {
         ASSERT_EQ(geom.y, 30, "unknown position defaults to top-right y");
     }
 
-    // Test: text width calculation
+    // Test: g_font.text_width via bitmap backend
     {
-        int w = text_width("Hello", 2);  // scale=2, 8px font
-        ASSERT_EQ(w, 5 * 8 * 2, "5 chars * 8px * scale 2");
+        bitmap_backend_init(&g_font);
+
+        // pixel_size=16 means scale=2, so width = len * FONT_WIDTH * scale
+        int w = g_font.text_width("Hello", 16);
+        ASSERT_EQ(w, 5 * 8 * 2, "5 chars * 8px * scale 2 at pixel_size 16");
     }
 
-    // Test: text width with scale 1
+    // Test: g_font.text_width with pixel_size=8 (scale=1)
     {
-        int w = text_width("AB", 1);
-        ASSERT_EQ(w, 2 * 8 * 1, "2 chars * 8px * scale 1");
+        int w = g_font.text_width("AB", 8);
+        ASSERT_EQ(w, 2 * 8 * 1, "2 chars * 8px * scale 1 at pixel_size 8");
     }
 
-    // Test: text width empty string
+    // Test: g_font.text_width empty string
     {
-        int w = text_width("", 3);
+        int w = g_font.text_width("", 24);
         ASSERT_EQ(w, 0, "empty string has zero width");
     }
 
-    // Test: text width NULL string
+    // Test: g_font.text_width NULL string
     {
-        int w = text_width(NULL, 2);
+        int w = g_font.text_width(NULL, 16);
         ASSERT_EQ(w, 0, "NULL string has zero width");
     }
 
