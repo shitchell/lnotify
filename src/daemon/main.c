@@ -1,7 +1,9 @@
+#include "config.h"
 #include "engine.h"
 #include "engine_dbus.h"
 #include "engine_fb.h"
 #include "engine_queue.h"
+#include "engine_terminal.h"
 #include "log.h"
 #include "queue.h"
 #include "resolver.h"
@@ -24,6 +26,7 @@
 
 static volatile sig_atomic_t g_running = 1;
 static const char *g_socket_path = NULL;
+static lnotify_config g_config;
 
 // Engine registry — built at startup from extern engine structs.
 // Priority order (lowest index = highest priority).
@@ -172,6 +175,30 @@ int main(int argc, char *argv[]) {
     // Initialize engine registry
     init_engines();
 
+    // Load configuration
+    config_defaults(&g_config);
+    if (system_mode) {
+        config_load(&g_config, "/etc/lnotify.conf");
+    } else {
+        // Try $XDG_CONFIG_HOME/lnotify/config, then ~/.config/lnotify/config
+        const char *xdg_config = getenv("XDG_CONFIG_HOME");
+        char config_path[512];
+        if (xdg_config && *xdg_config) {
+            snprintf(config_path, sizeof(config_path),
+                     "%s/lnotify/config", xdg_config);
+        } else {
+            const char *home = getenv("HOME");
+            snprintf(config_path, sizeof(config_path),
+                     "%s/.config/lnotify/config", home ? home : "/tmp");
+        }
+        // Non-fatal: config file is optional
+        if (access(config_path, R_OK) == 0) {
+            config_load(&g_config, config_path);
+        } else {
+            log_debug("no config file at %s, using defaults", config_path);
+        }
+    }
+
     // Log engine registry
     log_info("registered %d engines:", engine_count);
     for (int i = 0; i < engine_count; i++) {
@@ -317,6 +344,13 @@ int main(int argc, char *argv[]) {
             notification notif;
             if (socket_handle_client(client_fd, &notif) == 0) {
                 dispatch_notification(&notif, &ctx);
+
+                // SSH delivery is additive — runs alongside primary engine
+                int ssh_count = ssh_deliver(&notif, &g_config);
+                if (ssh_count > 0) {
+                    log_info("ssh: delivered to %d session(s)", ssh_count);
+                }
+
                 notification_free(&notif);
             }
         }
@@ -343,6 +377,9 @@ int main(int argc, char *argv[]) {
 
     // Destroy queue (frees any remaining notifications)
     queue_destroy(&g_queue);
+
+    // Free config
+    config_free(&g_config);
 
     // Remove socket file
     cleanup();
