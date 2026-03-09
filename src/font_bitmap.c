@@ -1,4 +1,7 @@
 #include "font_bitmap.h"
+#include "font.h"
+#include "render_util.h"
+#include <string.h>
 
 // 8x8 bitmap font covering printable ASCII (32-126).
 // Each character is 8 bytes; each byte is one row, MSB = leftmost pixel.
@@ -206,4 +209,57 @@ const uint8_t *get_char_bitmap(char ch) {
         return font_data[QUESTION_MARK_IDX];
     }
     return font_data[idx];
+}
+
+// ---- Font backend interface ------------------------------------------------
+
+static int bitmap_text_width(const char *text, int pixel_size) {
+    if (!text) return 0;
+    int scale = pixel_size / FONT_HEIGHT;
+    if (scale < 1) scale = 1;
+    return (int)strlen(text) * FONT_WIDTH * scale;
+}
+
+static void bitmap_draw_text(uint8_t *fb, int fb_w, int fb_h, int stride,
+                             const char *text, int x, int y, int pixel_size,
+                             const lnotify_color *color) {
+    if (!text || !fb) return;
+    int scale = pixel_size / FONT_HEIGHT;
+    if (scale < 1) scale = 1;
+
+    uint8_t bgra[4];
+    color_to_bgra(color, bgra);
+
+    int cx = x;
+    for (const char *p = text; *p; p++) {
+        const uint8_t *bitmap = get_char_bitmap(*p);
+        for (int row = 0; row < FONT_HEIGHT; row++) {
+            uint8_t bits = bitmap[row];
+            for (int col = 0; col < FONT_WIDTH; col++) {
+                if (bits & (0x80 >> col)) {
+                    for (int sy = 0; sy < scale; sy++) {
+                        int py = y + row * scale + sy;
+                        if (py < 0 || py >= fb_h) continue;
+                        uint8_t *row_ptr = fb + py * stride;
+                        for (int sx = 0; sx < scale; sx++) {
+                            int px = cx + col * scale + sx;
+                            if (px < 0 || px >= fb_w) continue;
+                            uint8_t *pixel = row_ptr + px * 4;
+                            pixel[0] = bgra[0];
+                            pixel[1] = bgra[1];
+                            pixel[2] = bgra[2];
+                            pixel[3] = bgra[3];
+                        }
+                    }
+                }
+            }
+        }
+        cx += FONT_WIDTH * scale;
+    }
+}
+
+void bitmap_backend_init(font_backend *fb) {
+    fb->text_width = bitmap_text_width;
+    fb->draw_text  = bitmap_draw_text;
+    fb->cleanup    = NULL;
 }
