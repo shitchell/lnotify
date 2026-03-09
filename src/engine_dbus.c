@@ -143,13 +143,14 @@ static char *build_gdbus_command(const char *title, const char *body,
 
 // Try to read DBUS_SESSION_BUS_ADDRESS from /proc/{pid}/environ.
 // Returns a heap-allocated string or NULL.
-static char *get_dbus_addr_from_proc(uint32_t uid) {
+static char *get_dbus_addr_from_proc(uint32_t target_uid) {
     // Find a process owned by this uid that has the env var.
     // Strategy: scan /proc for processes owned by uid, check environ.
     // We use loginctl to find the session leader pid instead.
     char cmd[256];
     snprintf(cmd, sizeof(cmd),
-             "loginctl show-user %u -p Sessions --value 2>/dev/null", uid);
+             "loginctl show-user %u -p Sessions --value 2>/dev/null",
+             target_uid);
 
     FILE *fp = popen(cmd, "r");
     if (!fp) return NULL;
@@ -227,109 +228,105 @@ static char *get_dbus_addr_from_proc(uint32_t uid) {
 
     // Fallback: standard XDG path
     char fallback[128];
-    snprintf(fallback, sizeof(fallback), "unix:path=/run/user/%u/bus", uid);
+    snprintf(fallback, sizeof(fallback),
+             "unix:path=/run/user/%u/bus", target_uid);
     return strdup(fallback);
 }
 
 // -------------------------------------------------------------------
-//  Execute gdbus with retry (same-user case)
+//  Run a command on a user's D-Bus session (single attempt)
 // -------------------------------------------------------------------
 
-static bool dbus_exec_same_user(const char *gdbus_cmd) {
-    int delay_ms = DBUS_RETRY_BASE_MS;
+// Execute cmd as target_uid with their DBUS_SESSION_BUS_ADDRESS set.
+// If caller is already target_uid, runs directly via system().
+// Otherwise fork+setresuid. Returns 0 on success, non-zero on failure.
+int dbus_run_as_user(const char *cmd, uint32_t target_uid) {
+    uid_t my_uid = getuid();
 
-    for (int attempt = 1; attempt <= DBUS_RETRY_MAX_ATTEMPTS; attempt++) {
-        int rc = system(gdbus_cmd);
-        if (rc == 0) {
-            log_debug("engine_dbus: gdbus succeeded on attempt %d", attempt);
-            return true;
-        }
-
-        if (attempt < DBUS_RETRY_MAX_ATTEMPTS) {
-            log_debug("engine_dbus: gdbus failed (attempt %d/%d), "
-                      "retrying in %dms",
-                      attempt, DBUS_RETRY_MAX_ATTEMPTS, delay_ms);
-            usleep((useconds_t)delay_ms * 1000);
-            delay_ms = (int)(delay_ms * DBUS_RETRY_MULTIPLIER);
-        }
+    if ((uint32_t)my_uid == target_uid) {
+        // Same user — run directly
+        return system(cmd);
     }
 
-    log_error("engine_dbus: gdbus failed after %d attempts",
-              DBUS_RETRY_MAX_ATTEMPTS);
-    return false;
-}
+    // Cross-user — fork, become target user, exec
+    char *dbus_addr = get_dbus_addr_from_proc(target_uid);
+    log_debug("dbus_run_as_user: target uid=%u, DBUS_SESSION_BUS_ADDRESS=%s",
+              target_uid, dbus_addr ? dbus_addr : "(null)");
 
-// -------------------------------------------------------------------
-//  Execute gdbus with fork+setresuid (cross-user case)
-// -------------------------------------------------------------------
+    pid_t pid = fork();
 
-static bool dbus_exec_cross_user(const char *gdbus_cmd,
-                                  uint32_t target_uid,
-                                  const char *dbus_addr) {
-    int delay_ms = DBUS_RETRY_BASE_MS;
+    if (pid < 0) {
+        log_error("dbus_run_as_user: fork failed: %s", strerror(errno));
+        free(dbus_addr);
+        return -1;
+    }
 
-    for (int attempt = 1; attempt <= DBUS_RETRY_MAX_ATTEMPTS; attempt++) {
-        pid_t pid = fork();
-
-        if (pid < 0) {
-            log_error("engine_dbus: fork failed: %s", strerror(errno));
-            return false;
+    if (pid == 0) {
+        // Child: become the target user
+        // Set GID before UID (required order)
+        gid_t target_gid = (gid_t)target_uid;
+        if (setresgid(target_gid, target_gid, target_gid) < 0) {
+            _exit(127);
         }
-
-        if (pid == 0) {
-            // Child process: become the target user
-            gid_t target_gid = (gid_t)target_uid;  // Primary GID usually matches UID
-
-            // Look up the actual GID from /etc/passwd would be better,
-            // but for v1, getpwuid is fine
-            // Note: we set GID before UID (required order)
-            if (setresgid(target_gid, target_gid, target_gid) < 0) {
-                _exit(127);
-            }
-            if (setresuid((uid_t)target_uid, (uid_t)target_uid,
-                          (uid_t)target_uid) < 0) {
-                _exit(127);
-            }
-
-            // Set the D-Bus session bus address
-            if (dbus_addr) {
-                setenv("DBUS_SESSION_BUS_ADDRESS", dbus_addr, 1);
-            }
-
-            // Set XDG_RUNTIME_DIR for gdbus (needed for session bus access)
-            char xdg_dir[64];
-            snprintf(xdg_dir, sizeof(xdg_dir), "/run/user/%u", target_uid);
-            setenv("XDG_RUNTIME_DIR", xdg_dir, 1);
-
-            // Execute the gdbus command via shell
-            execl("/bin/sh", "sh", "-c", gdbus_cmd, (char *)NULL);
+        if (setresuid((uid_t)target_uid, (uid_t)target_uid,
+                      (uid_t)target_uid) < 0) {
             _exit(127);
         }
 
-        // Parent: wait for child
-        int status;
-        if (waitpid(pid, &status, 0) < 0) {
-            log_error("engine_dbus: waitpid failed: %s", strerror(errno));
-            return false;
+        // Set D-Bus session bus address
+        if (dbus_addr) {
+            setenv("DBUS_SESSION_BUS_ADDRESS", dbus_addr, 1);
         }
 
-        if (WIFEXITED(status) && WEXITSTATUS(status) == 0) {
-            log_debug("engine_dbus: cross-user gdbus succeeded on attempt %d "
-                      "(target uid=%u)", attempt, target_uid);
+        // Set XDG_RUNTIME_DIR (needed for session bus access)
+        char xdg_dir[64];
+        snprintf(xdg_dir, sizeof(xdg_dir), "/run/user/%u", target_uid);
+        setenv("XDG_RUNTIME_DIR", xdg_dir, 1);
+
+        execl("/bin/sh", "sh", "-c", cmd, (char *)NULL);
+        _exit(127);
+    }
+
+    // Parent: wait for child
+    free(dbus_addr);
+    int status;
+    if (waitpid(pid, &status, 0) < 0) {
+        log_error("dbus_run_as_user: waitpid failed: %s", strerror(errno));
+        return -1;
+    }
+
+    if (WIFEXITED(status)) {
+        return WEXITSTATUS(status);
+    }
+    return -1;
+}
+
+// -------------------------------------------------------------------
+//  Execute with retry
+// -------------------------------------------------------------------
+
+static bool dbus_exec_with_retry(const char *cmd, uint32_t target_uid) {
+    int delay_ms = DBUS_RETRY_BASE_MS;
+
+    for (int attempt = 1; attempt <= DBUS_RETRY_MAX_ATTEMPTS; attempt++) {
+        int rc = dbus_run_as_user(cmd, target_uid);
+        if (rc == 0) {
+            log_debug("engine_dbus: succeeded on attempt %d (uid=%u)",
+                      attempt, target_uid);
             return true;
         }
 
         if (attempt < DBUS_RETRY_MAX_ATTEMPTS) {
-            log_debug("engine_dbus: cross-user gdbus failed (attempt %d/%d), "
+            log_debug("engine_dbus: failed (attempt %d/%d, uid=%u), "
                       "retrying in %dms",
-                      attempt, DBUS_RETRY_MAX_ATTEMPTS, delay_ms);
+                      attempt, DBUS_RETRY_MAX_ATTEMPTS, target_uid, delay_ms);
             usleep((useconds_t)delay_ms * 1000);
             delay_ms = (int)(delay_ms * DBUS_RETRY_MULTIPLIER);
         }
     }
 
-    log_error("engine_dbus: cross-user gdbus failed after %d attempts "
-              "(target uid=%u)", DBUS_RETRY_MAX_ATTEMPTS, target_uid);
+    log_error("engine_dbus: failed after %d attempts (uid=%u)",
+              DBUS_RETRY_MAX_ATTEMPTS, target_uid);
     return false;
 }
 
@@ -346,27 +343,7 @@ static bool dbus_render(const notification *notif,
         return false;
     }
 
-    bool success;
-    uid_t my_uid = getuid();
-
-    if ((uint32_t)my_uid == ctx->uid) {
-        // Same user — just execute gdbus directly
-        log_debug("engine_dbus: same-user delivery (uid=%u)", ctx->uid);
-        success = dbus_exec_same_user(gdbus_cmd);
-    } else {
-        // Cross-user delivery — fork + setresuid
-        log_info("engine_dbus: cross-user delivery "
-                 "(daemon uid=%u, target uid=%u)",
-                 (uint32_t)my_uid, ctx->uid);
-
-        char *dbus_addr = get_dbus_addr_from_proc(ctx->uid);
-        log_debug("engine_dbus: target DBUS_SESSION_BUS_ADDRESS=%s",
-                  dbus_addr ? dbus_addr : "(null)");
-
-        success = dbus_exec_cross_user(gdbus_cmd, ctx->uid, dbus_addr);
-        free(dbus_addr);
-    }
-
+    bool success = dbus_exec_with_retry(gdbus_cmd, ctx->uid);
     free(gdbus_cmd);
 
     if (success) {

@@ -13,6 +13,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
 #include <sys/un.h>
 #include <unistd.h>
 
@@ -51,6 +52,13 @@ int socket_listen(const char *path) {
 
     if (bind(fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
         log_error("bind(%s): %s", path, strerror(errno));
+        close(fd);
+        return -1;
+    }
+
+    // Allow non-root users to connect (write permission needed for Unix sockets)
+    if (chmod(path, 0666) < 0) {
+        log_error("chmod(%s): %s", path, strerror(errno));
         close(fd);
         return -1;
     }
