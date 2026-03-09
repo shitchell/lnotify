@@ -1,5 +1,4 @@
 #include "font.h"
-#include "font_bitmap.h"  /* for FONT_WIDTH, FONT_HEIGHT (fallback paths) */
 #include "render_util.h"  /* for color_to_bgra */
 #include "log.h"
 
@@ -54,7 +53,7 @@ static void freetype_draw_text(uint8_t *fb, int fb_w, int fb_h, int stride,
                 int px = glyph_x + (int)col;
                 if (px < 0 || px >= fb_w) continue;
 
-                unsigned char alpha = bmp->buffer[row * (unsigned int)bmp->pitch + col];
+                unsigned char alpha = bmp->buffer[(int)row * bmp->pitch + (int)col];
                 if (alpha > 128) {
                     int offset = py * stride + px * 4;
                     fb[offset + 0] = bgra[0];
