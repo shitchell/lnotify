@@ -130,9 +130,11 @@ int main(int argc, char *argv[]) {
     const char *body = argv[optind];
 
     // Resolve socket path
-    if (!socket_path) {
-        socket_path = socket_default_path(system_mode);
+    if (!socket_path && system_mode) {
+        socket_path = socket_default_path(true);
     }
+    // If no explicit path, we'll try user socket then fall back to system
+    // (handled below at connect time)
 
     // Build notification
     notification notif;
@@ -161,36 +163,71 @@ int main(int argc, char *argv[]) {
     }
 
     // Connect to daemon socket
-    int fd = socket(AF_UNIX, SOCK_STREAM, 0);
-    if (fd < 0) {
-        fprintf(stderr, "error: socket(): %s\n", strerror(errno));
-        notification_free(&notif);
-        return 1;
-    }
+    // If no explicit path, try user socket first, then system socket
+    const char *try_paths[2] = { NULL, NULL };
+    char user_path_buf[256];
+    int try_count = 0;
 
-    struct sockaddr_un addr;
-    memset(&addr, 0, sizeof(addr));
-    addr.sun_family = AF_UNIX;
-    if (strlen(socket_path) >= sizeof(addr.sun_path)) {
-        fprintf(stderr, "error: socket path too long: %s\n", socket_path);
-        close(fd);
-        notification_free(&notif);
-        return 1;
-    }
-    strncpy(addr.sun_path, socket_path, sizeof(addr.sun_path) - 1);
-
-    if (connect(fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
-        if (errno == ENOENT) {
-            fprintf(stderr, "error: cannot connect to socket at %s — lnotifyd not running?\n", socket_path);
-        } else if (errno == ECONNREFUSED) {
-            fprintf(stderr, "error: connection refused at %s — lnotifyd not running?\n", socket_path);
-        } else {
-            fprintf(stderr, "error: connect(%s): %s\n", socket_path, strerror(errno));
+    if (socket_path) {
+        // Explicit path (--socket or --system) — only try that one
+        try_paths[0] = socket_path;
+        try_count = 1;
+    } else {
+        // Copy user path since socket_default_path uses a static buffer
+        snprintf(user_path_buf, sizeof(user_path_buf), "%s",
+                 socket_default_path(false));
+        try_paths[0] = user_path_buf;
+        try_paths[1] = socket_default_path(true);  // "/run/lnotify.sock"
+        try_count = 2;
+        // If both resolve to the same path, only try once
+        if (strcmp(try_paths[0], try_paths[1]) == 0) {
+            try_count = 1;
         }
+    }
+
+    int fd = -1;
+    const char *connected_path = NULL;
+    for (int i = 0; i < try_count; i++) {
+        fd = socket(AF_UNIX, SOCK_STREAM, 0);
+        if (fd < 0) {
+            fprintf(stderr, "error: socket(): %s\n", strerror(errno));
+            notification_free(&notif);
+            return 1;
+        }
+
+        struct sockaddr_un addr;
+        memset(&addr, 0, sizeof(addr));
+        addr.sun_family = AF_UNIX;
+        if (strlen(try_paths[i]) >= sizeof(addr.sun_path)) {
+            fprintf(stderr, "error: socket path too long: %s\n", try_paths[i]);
+            close(fd);
+            fd = -1;
+            continue;
+        }
+        strncpy(addr.sun_path, try_paths[i], sizeof(addr.sun_path) - 1);
+
+        if (connect(fd, (struct sockaddr *)&addr, sizeof(addr)) == 0) {
+            connected_path = try_paths[i];
+            break;
+        }
+
+        // Connection failed — if more paths to try, continue silently
         close(fd);
+        fd = -1;
+    }
+
+    if (fd < 0) {
+        // All paths failed
+        fprintf(stderr, "error: cannot connect to lnotifyd — not running?\n");
+        fprintf(stderr, "  tried:");
+        for (int i = 0; i < try_count; i++) {
+            fprintf(stderr, " %s", try_paths[i]);
+        }
+        fprintf(stderr, "\n");
         notification_free(&notif);
         return 1;
     }
+    (void)connected_path;
 
     // Write serialized data
     ssize_t total_written = 0;
