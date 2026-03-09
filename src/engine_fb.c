@@ -216,21 +216,23 @@ static void fb_draw_rounded_border(int rx, int ry, int rw, int rh,
 // Must be called before fb_draw_toast and fb_save_region.
 static void fb_compute_geometry(const notification *notif,
                                  const lnotify_config *cfg) {
-    int scale = cfg->font_size / FONT_HEIGHT;
-    if (scale < 1) scale = 1;
+    int title_scale = cfg->font_size / FONT_HEIGHT;
+    if (title_scale < 1) title_scale = 1;
+    int body_scale = title_scale > 1 ? title_scale - 1 : 1;
 
-    int char_h = FONT_HEIGHT * scale;
-    int line_spacing = char_h / 2;
+    int title_h = FONT_HEIGHT * title_scale;
+    int body_h  = FONT_HEIGHT * body_scale;
+    int line_spacing = body_h / 2;
     if (line_spacing < 2) line_spacing = 2;
 
-    int title_w = text_width(notif->title, scale);
-    int body_w  = text_width(notif->body, scale);
+    int title_w = text_width(notif->title, title_scale);
+    int body_w  = text_width(notif->body, body_scale);
     int content_w = title_w > body_w ? title_w : body_w;
     int content_h = 0;
     if (notif->title) {
-        content_h += char_h + line_spacing;
+        content_h += title_h + line_spacing;
     }
-    content_h += char_h;
+    content_h += body_h;
 
     int toast_w = content_w + 2 * cfg->padding + 2 * cfg->border_width;
     int toast_h = content_h + 2 * cfg->padding + 2 * cfg->border_width;
@@ -246,11 +248,13 @@ static void fb_compute_geometry(const notification *notif,
 // fb_compute_geometry first).
 static void fb_draw_toast(const notification *notif,
                            const lnotify_config *cfg) {
-    int scale = cfg->font_size / FONT_HEIGHT;
-    if (scale < 1) scale = 1;
+    int title_scale = cfg->font_size / FONT_HEIGHT;
+    if (title_scale < 1) title_scale = 1;
+    int body_scale = title_scale > 1 ? title_scale - 1 : 1;
 
-    int char_h = FONT_HEIGHT * scale;
-    int line_spacing = char_h / 2;
+    int title_h = FONT_HEIGHT * title_scale;
+    int body_h  = FONT_HEIGHT * body_scale;
+    int line_spacing = body_h / 2;
     if (line_spacing < 2) line_spacing = 2;
 
     // Draw background (rounded rect)
@@ -271,10 +275,10 @@ static void fb_draw_toast(const notification *notif,
     int text_y = saved_geom.y + cfg->border_width + cfg->padding;
 
     if (notif->title) {
-        fb_draw_text(notif->title, text_x, text_y, scale, &cfg->fg_color);
-        text_y += char_h + line_spacing;
+        fb_draw_text(notif->title, text_x, text_y, title_scale, &cfg->fg_color);
+        text_y += title_h + line_spacing;
     }
-    fb_draw_text(notif->body, text_x, text_y, scale, &cfg->fg_color);
+    fb_draw_text(notif->body, text_x, text_y, body_scale, &cfg->fg_color);
 }
 
 // -------------------------------------------------------------------
