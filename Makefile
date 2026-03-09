@@ -1,12 +1,12 @@
 CC = cc
-CFLAGS = -std=c11 -D_POSIX_C_SOURCE=199309L -Wall -Wextra -Wpedantic -Iinclude -g
+CFLAGS = -std=c11 -D_POSIX_C_SOURCE=200809L -D_DEFAULT_SOURCE -Wall -Wextra -Wpedantic -Iinclude -Itests -g
 LDFLAGS = -lpthread
 
 # Source files (add as created)
-COMMON_SRC = src/log.c
+COMMON_SRC = src/log.c src/notification.c
 DAEMON_SRC = src/daemon/main.c $(COMMON_SRC)
 CLIENT_SRC = src/client/main.c $(COMMON_SRC)
-TEST_SRC   = tests/test_main.c $(COMMON_SRC)
+TEST_SRC   = tests/test_main.c tests/test_notification.c $(COMMON_SRC)
 
 .PHONY: all clean test daemon client
 

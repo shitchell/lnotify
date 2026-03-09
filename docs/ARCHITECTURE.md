@@ -90,7 +90,9 @@ _Updated as implementation progresses. Files marked with [exists] are implemente
 | `include/log.h` | Logging module (debug/info/error with timestamps) | [exists] |
 | `src/log.c` | Logging implementation | [exists] |
 | `include/engine.h` | Engine vtable, session context, probe_key enum | planned |
-| `include/lnotify.h` | Notification struct, timestamps, shared constants | planned |
+| `include/lnotify.h` | Notification struct, timestamps, shared constants | [exists] |
+| `src/notification.c` | Notification init, free, expiration, dedup | [exists] |
+| `tests/test_util.h` | Shared test macros (extracted from test_main.c) | [exists] |
 | `include/protocol.h` | Wire format serialize/deserialize | planned |
 | `include/config.h` | Config struct and parser | planned |
 | `include/resolver.h` | Engine resolver loop | planned |
@@ -103,6 +105,8 @@ _Updated as implementation progresses. Files marked with [exists] are implemente
 ## Implementation Status
 
 **Task 1 complete:** Project scaffolding is in place. Makefile builds `lnotifyd` (daemon) and `lnotify` (client) into `build/`. Logging module provides timestamped debug/info/error output to stderr. Test harness compiles and runs with `make test`. Daemon and client are stubs that log startup and exit.
+
+**Task 2 complete:** Notification data model (`notification` struct) with creation, string ownership, expiration tracking, remaining timeout calculation, and group_id-based dedup. Test macros extracted to shared `tests/test_util.h`. All 14 notification tests pass.
 
 ## Design References
 
