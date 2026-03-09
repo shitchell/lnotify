@@ -25,14 +25,14 @@
 static volatile sig_atomic_t g_running = 1;
 static const char *g_socket_path = NULL;
 
-// Engine registry — priority order (lowest index = highest priority).
+// Engine registry — built at startup from extern engine structs.
+// Priority order (lowest index = highest priority).
 // Terminal engine (Task 15) will be inserted between framebuffer and queue.
-static engine *engines[] = {
-    &engine_dbus,        // priority 10: GUI sessions
-    &engine_framebuffer, // priority 50: raw TTY framebuffer
-    &engine_queue,       // priority 100: universal fallback
-};
-static const int engine_count = (int)(sizeof(engines) / sizeof(engines[0]));
+// Note: this must be initialized at runtime because the engine structs are
+// extern globals and C does not allow non-constant initializers for file-scope
+// arrays. See init_engines().
+static engine engines[MAX_ENGINES];
+static int engine_count = 0;
 
 // Active engine (currently rendering a notification)
 static engine *g_active_engine = NULL;
@@ -42,6 +42,17 @@ static engine *g_active_engine = NULL;
 
 // Poll timeout in ms — allows periodic housekeeping even with no events
 #define POLL_TIMEOUT_MS 5000
+
+// ---------------------------------------------------------------------------
+// Engine initialization
+// ---------------------------------------------------------------------------
+
+static void init_engines(void) {
+    engines[0] = engine_dbus;        // priority 10: GUI sessions
+    engines[1] = engine_framebuffer; // priority 50: raw TTY framebuffer
+    engines[2] = engine_queue;       // priority 100: universal fallback
+    engine_count = 3;
+}
 
 // ---------------------------------------------------------------------------
 // Signal handler
@@ -96,7 +107,7 @@ static uint32_t read_vt_number(int sysfs_fd) {
 // Dispatch a notification through the engine resolver. If an engine accepts,
 // render the notification. Otherwise push to queue.
 static void dispatch_notification(notification *notif, session_context *ctx) {
-    engine *eng = resolver_select(*engines, engine_count, ctx, NULL);
+    engine *eng = resolver_select(engines, engine_count, ctx, NULL);
 
     if (eng) {
         log_info("dispatching via engine '%s'", eng->name);
@@ -158,11 +169,14 @@ int main(int argc, char *argv[]) {
         log_info("system mode enabled");
     }
 
+    // Initialize engine registry
+    init_engines();
+
     // Log engine registry
     log_info("registered %d engines:", engine_count);
     for (int i = 0; i < engine_count; i++) {
-        log_info("  [%d] %s (priority %d)", i, engines[i]->name,
-                 engines[i]->priority);
+        log_info("  [%d] %s (priority %d)", i, engines[i].name,
+                 engines[i].priority);
     }
 
     // Initialize notification queue
