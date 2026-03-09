@@ -524,6 +524,8 @@ When Claude raised the edge case that a root system daemon's "always notify own 
 |---|---|---|---|
 | Trust session type (skip introspection for wayland/x11) | claude proposed as option (b) | Assume graphical sessions have notification servers | User said "no trust. zero trust. verify everything." |
 
+> **Superseded by D34:** `dbus_run_as_user()` was replaced by the callback-based `dbus_call_as_user()` in the sd-bus refactor. The DRY principle and cross-user pattern remain; only the implementation changed from shell commands to native sd-bus calls.
+
 ---
 
 ### D32: Git-tag-based versioning
@@ -534,6 +536,55 @@ When Claude raised the edge case that a root system daemon's "always notify own 
 - **Rationale:** User said "i like when the SOT is tags" and asked how reasonable that is in C. Standard C/Makefile pattern: tag is SOT, dev builds automatically show distance from last tag (e.g. `v0-3-gabcdef`). User chose simple `v{n}` numbering: "for this i think i'm happy with simply `v{n}` version numbers"
 - **Maps to:** V1
 - **Tags:** build, versioning
+
+---
+
+## Session: 2026-03-09 — sd-bus Refactor
+
+**Context:** Post-v1 refactor. The working codebase used `system()`, `popen()`, and `execl("/bin/sh")` to call `loginctl` and `gdbus` as subprocesses. This worked but felt architecturally wrong — a C program reaching up into shell territory. Session designed and implemented native sd-bus replacements for all subprocess calls.
+
+**GVP source:** Inferred inline
+
+---
+
+### D33: Replace all subprocess calls with native sd-bus + fork/exec
+
+> Replace `system()`/`popen()`/`execl("/bin/sh")` with native `sd-bus` for D-Bus/logind queries and direct `fork`/`exec` for tmux commands.
+
+- **Chosen:** Native sd-bus for D-Bus, new `logind.c` module for logind queries, `fork`/`execvp` for tmux
+- **Rationale:** User said "since C is a low-level language below the shell, it feels weird for it to be reaching up into shell territory to do stuff. that *feels* wrong; anything the shell can do, C should be able to do. you build shells from C, not the other way around."
+- **Empirical finding:** Root cannot connect to a user's D-Bus session bus directly — `sd_bus_open_user()` fails, connection is rejected at the protocol level. The existing fork+setresuid cross-user pattern is still required, but now uses `sd_bus_open_user()` in the child instead of `execl("/bin/sh", "gdbus", ...)`.
+- **Maps to:** V1, P1
+- **Tags:** architecture, dbus, refactor
+
+**Considered:**
+
+| Alternative | Source | Description | Why not? |
+|---|---|---|---|
+| Keep subprocess calls (status quo) | discussed | Continue using loginctl/gdbus via popen/system | User felt it was architecturally wrong for C to shell out |
+| libdbus (low-level D-Bus library) | claude considered | Direct D-Bus protocol without systemd dependency | sd-bus is simpler, already available via libsystemd, handles connection management |
+
+---
+
+### D34: Callback-based `dbus_call_as_user()` API
+
+> Replace the command-string-based `dbus_run_as_user(cmd, uid)` with a callback-based `dbus_call_as_user(uid, fn, userdata)` that receives an open `sd_bus *`.
+
+- **Chosen:** Callback with `dbus_user_fn` typedef
+- **Rationale:** The old API took a shell command string and executed it. With sd-bus, the caller needs a bus connection object, not a command string. A callback pattern lets each caller (probe, notify) define its own sd-bus operations while sharing the same-user/cross-user connection logic.
+- **Maps to:** P1
+- **Tags:** architecture, dbus, API
+
+---
+
+### D35: Shared logind module for system bus queries
+
+> New `logind.c` module wraps all sd-bus calls to `org.freedesktop.login1`, replacing loginctl subprocess calls in `engine.c`, `engine_dbus.c`, and `ssh_delivery.c`.
+
+- **Chosen:** Shared module with cached system bus connection
+- **Rationale:** Three files (`engine.c`, `engine_dbus.c`, `ssh_delivery.c`) all queried logind via separate `popen("loginctl ...")` calls. A shared module eliminates duplication and provides a single cached system bus connection. The system bus is accessible directly by root — no fork/setresuid needed (unlike the user session bus).
+- **Maps to:** P1
+- **Tags:** architecture, logind, DRY
 
 ---
 
