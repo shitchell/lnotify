@@ -118,6 +118,9 @@ _Updated as implementation progresses. Files marked with [exists] are implemente
 | `src/daemon/socket.c` | Unix socket listener | planned |
 | `src/daemon/ssh_delivery.c` | SSH session discovery and pty delivery | planned |
 | `src/client/main.c` | CLI entry point | [exists] (stub) |
+| `include/queue.h` | Thread-safe notification queue (FIFO, dedup, expiration) | [exists] |
+| `src/queue.c` | Queue implementation (linked list, mutex-protected) | [exists] |
+| `tests/test_queue.c` | Queue tests (enqueue/dequeue, dedup, expiration, FIFO) | [exists] |
 | `tests/test_main.c` | Test runner with minimal assertion framework | [exists] |
 
 ## Implementation Status
@@ -132,7 +135,9 @@ _Updated as implementation progresses. Files marked with [exists] are implemente
 
 **Task 5 complete:** Engine vtable (`engine` struct with detect/render/dismiss function pointers), session context struct, and probe infrastructure. `context_init_from_logind()` queries `loginctl` to populate session properties (type, class, user, seat, remote) for a given VT. `context_run_probe()` dispatches probes via switch statement: `PROBE_HAS_DBUS_NOTIFICATIONS` (gdbus introspect), `PROBE_HAS_FRAMEBUFFER` (access check), others stubbed. Probe bitfield prevents redundant work. Tests bypass probes by setting context fields directly (validated in Task 6). `context_free()` cleans up all heap-allocated strings.
 
-**Task 6 complete:** Engine resolver loop (`resolver_select`) iterates engines in priority order, handles `ENGINE_NEED_PROBE` by running probes and re-evaluating, tracks rejections via bitfield, and prevents infinite loops when a probe is already completed. Probe function is injectable via `probe_fn` callback — tests use a mock that marks probes done without system calls; production code passes `context_run_probe` (or NULL to default). 24 resolver tests cover: first-accept, skip-rejected, all-reject, probe-then-accept, probe-negative-fallback, rejected-skipped-after-probe, pre-completed-probe, probe-then-reject, empty list, null probe_fn, and multi-probe scenarios. Total: 136 tests passing.
+**Task 6 complete:** Engine resolver loop (`resolver_select`) iterates engines in priority order, handles `ENGINE_NEED_PROBE` by running probes and re-evaluating, tracks rejections via bitfield, and prevents infinite loops when a probe is already completed. Probe function is injectable via `probe_fn` callback — tests use a mock that marks probes done without system calls; production code passes `context_run_probe` (or NULL to default). 24 resolver tests cover: first-accept, skip-rejected, all-reject, probe-then-accept, probe-negative-fallback, rejected-skipped-after-probe, pre-completed-probe, probe-then-reject, empty list, null probe_fn, and multi-probe scenarios.
+
+**Task 7 complete:** Thread-safe notification queue (`notif_queue`) using a singly-linked list protected by a pthread mutex. `queue_push` deep-copies notifications and performs group_id dedup (scans for matching group_id and replaces in-place). `queue_pop` returns the front entry (FIFO). `queue_pop_live` drains expired notifications and returns the first live one (or NULL if all expired). `queue_size` returns the current count. 10 queue tests cover: enqueue/dequeue, group_id dedup replacement, expired notification skipping, and FIFO ordering. Total: 146 tests passing.
 
 ## Design References
 
