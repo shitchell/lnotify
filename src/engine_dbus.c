@@ -9,6 +9,7 @@
 #include <string.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <pwd.h>
 #include <unistd.h>
 
 // -------------------------------------------------------------------
@@ -80,8 +81,12 @@ int dbus_call_as_user(uint32_t target_uid, dbus_user_fn fn, void *userdata) {
         snprintf(xdg, sizeof(xdg), "/run/user/%u", target_uid);
         setenv("XDG_RUNTIME_DIR", xdg, 1);
 
+        // Look up the user's actual GID from passwd
+        struct passwd *pw = getpwuid(target_uid);
+        if (!pw) _exit(127);
+
         // Set GID before UID (required order)
-        if (setresgid(target_uid, target_uid, target_uid) < 0) _exit(127);
+        if (setresgid(pw->pw_gid, pw->pw_gid, pw->pw_gid) < 0) _exit(127);
         if (setresuid(target_uid, target_uid, target_uid) < 0) _exit(127);
 
         sd_bus *bus = NULL;
