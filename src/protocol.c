@@ -1,6 +1,9 @@
 #include "protocol.h"
 #include <string.h>
 
+_Static_assert(__BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__,
+               "lnotify protocol assumes little-endian byte order");
+
 // Known data field_mask bits — used to parse optional fields during deserialization
 #define FIELD_MASK_DATA (FIELD_TITLE | FIELD_APP | FIELD_GROUP)
 // All known field_mask bits (data + transport flags)
