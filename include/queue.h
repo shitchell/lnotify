@@ -5,6 +5,11 @@
 #include <pthread.h>
 #include <stddef.h>
 
+// Maximum number of entries in a notification queue. When a push would exceed
+// this limit, the oldest entry is dropped to make room (prevents memory
+// exhaustion via the world-writable socket).
+#define QUEUE_MAX_SIZE 1000
+
 // Singly-linked list node holding a deep-copied notification
 typedef struct notif_node {
     notification        notif;

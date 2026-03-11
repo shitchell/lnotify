@@ -82,6 +82,37 @@ void test_queue_suite(void) {
         queue_destroy(&q);
     }
 
+    // Test: queue size capped at QUEUE_MAX_SIZE (oldest dropped)
+    {
+        notif_queue q;
+        queue_init(&q);
+
+        // Push QUEUE_MAX_SIZE + 1 notifications
+        for (int i = 0; i <= (int)QUEUE_MAX_SIZE; i++) {
+            notification n = {0};
+            char buf[32];
+            snprintf(buf, sizeof(buf), "notif-%d", i);
+            notification_init(&n, NULL, buf);
+            n.timeout_ms = 60000;
+            n.ts_mono = monotonic_ms();
+            queue_push(&q, &n);
+            notification_free(&n);
+        }
+
+        ASSERT_EQ(queue_size(&q), QUEUE_MAX_SIZE,
+                  "queue capped at QUEUE_MAX_SIZE");
+
+        // The oldest (notif-0) should have been dropped; head should be notif-1
+        notification *front = queue_pop(&q);
+        ASSERT_NOT_NULL(front, "front not null after cap");
+        ASSERT_STR_EQ(front->body, "notif-1",
+                      "oldest notification dropped when queue full");
+        notification_free(front);
+        free(front);
+
+        queue_destroy(&q);
+    }
+
     // Test: FIFO order
     {
         notif_queue q;

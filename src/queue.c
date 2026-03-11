@@ -1,4 +1,5 @@
 #include "queue.h"
+#include "log.h"
 #include <string.h>
 
 // Global notification queue instance
@@ -96,6 +97,18 @@ void queue_push(notif_queue *q, const notification *n) {
     }
     q->tail = node;
     q->count++;
+
+    // Evict oldest entry if queue exceeds the size limit
+    if (q->count > QUEUE_MAX_SIZE) {
+        notif_node *old = q->head;
+        q->head = old->next;
+        if (!q->head) q->tail = NULL;
+        q->count--;
+        notification_free(&old->notif);
+        free(old);
+        log_error("queue: size limit reached (%d), dropped oldest notification",
+                  QUEUE_MAX_SIZE);
+    }
 
     pthread_mutex_unlock(&q->lock);
 }
