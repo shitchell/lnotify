@@ -44,19 +44,19 @@ void context_init_from_logind(session_context *ctx, uint32_t vt) {
     char *tmp;
 
     tmp = strdup(session.type ? session.type : "");
-    if (tmp) { free((void *)ctx->session_type); ctx->session_type = tmp; }
+    if (tmp) { free(ctx->session_type); ctx->session_type = tmp; }
     else { log_error("context_init_from_logind: strdup failed for session_type"); }
 
     tmp = strdup(session.session_class ? session.session_class : "");
-    if (tmp) { free((void *)ctx->session_class); ctx->session_class = tmp; }
+    if (tmp) { free(ctx->session_class); ctx->session_class = tmp; }
     else { log_error("context_init_from_logind: strdup failed for session_class"); }
 
     tmp = strdup(session.username ? session.username : "");
-    if (tmp) { free((void *)ctx->username); ctx->username = tmp; }
+    if (tmp) { free(ctx->username); ctx->username = tmp; }
     else { log_error("context_init_from_logind: strdup failed for username"); }
 
     tmp = strdup(session.seat ? session.seat : "");
-    if (tmp) { free((void *)ctx->seat); ctx->seat = tmp; }
+    if (tmp) { free(ctx->seat); ctx->seat = tmp; }
     else { log_error("context_init_from_logind: strdup failed for seat"); }
 
     ctx->uid = session.uid;
@@ -79,13 +79,13 @@ void context_init_from_logind(session_context *ctx, uint32_t vt) {
 // ---------------------------------------------------------------------------
 
 void context_free(session_context *ctx) {
-    free((void *)ctx->username);
-    free((void *)ctx->session_type);
-    free((void *)ctx->session_class);
-    free((void *)ctx->seat);
-    free((void *)ctx->compositor_name);
-    free((void *)ctx->terminal_type);
-    free((void *)ctx->foreground_process);
+    free(ctx->username);
+    free(ctx->session_type);
+    free(ctx->session_class);
+    free(ctx->seat);
+    free(ctx->compositor_name);
+    free(ctx->terminal_type);
+    free(ctx->foreground_process);
     memset(ctx, 0, sizeof(*ctx));
 }
 

@@ -26,19 +26,19 @@ typedef struct {
     // Phase 0: from logind (always available)
     uint32_t    vt;
     uint32_t    uid;
-    const char *username;
-    const char *session_type;     // "wayland", "x11", "tty", ""
-    const char *session_class;    // "user", "greeter"
-    const char *seat;
+    char       *username;
+    char       *session_type;     // "wayland", "x11", "tty", ""
+    char       *session_class;    // "user", "greeter"
+    char       *seat;
     bool        remote;
 
     // Probed fields (populated on demand)
     bool        has_dbus_notifications;
-    const char *compositor_name;
+    char       *compositor_name;
     bool        has_framebuffer;
-    const char *terminal_type;
+    char       *terminal_type;
     bool        terminal_supports_osc;
-    const char *foreground_process;
+    char       *foreground_process;
 
     // Probe bookkeeping
     uint32_t    probes_completed;   // bitfield of probe_key
