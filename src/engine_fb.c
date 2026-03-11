@@ -64,6 +64,7 @@ static void fb_record_verify_samples(void);
 static bool fb_verify_visible(void);
 static void *defense_thread_fn(void *arg);
 static void fb_cleanup_unlocked(void);
+static void fb_dismiss(void);
 
 // -------------------------------------------------------------------
 //  detect()
@@ -461,14 +462,31 @@ static void *defense_thread_fn(void *arg) {
 
             if (consecutive_failures >= 3) {
                 // Give up — clean up directly (NOT through dismiss!)
-                // Push notification to queue for later delivery
+                // Copy notification for queue before cleanup frees it
                 log_info("engine_fb: 3 consecutive defense failures, "
                          "pushing to queue");
-                queue_push(&g_queue, &defense_notif);
+                notification copy;
+                if (notification_init(&copy, defense_notif.title,
+                                      defense_notif.body) < 0) {
+                    log_error("engine_fb: failed to copy notification "
+                              "for queue");
+                    fb_cleanup_unlocked();
+                    defense_running = false;
+                    pthread_mutex_unlock(&fb_mutex);
+                    return NULL;
+                }
+                copy.priority   = defense_notif.priority;
+                copy.timeout_ms = defense_notif.timeout_ms;
+                copy.ts_mono    = defense_notif.ts_mono;
 
                 fb_cleanup_unlocked();
                 defense_running = false;
                 pthread_mutex_unlock(&fb_mutex);
+
+                // Push to queue AFTER releasing fb_mutex to avoid
+                // lock ordering violation (fb_mutex → queue_mutex)
+                queue_push(&g_queue, &copy);
+                notification_free(&copy);
                 return NULL;
             }
 
@@ -494,6 +512,14 @@ static void *defense_thread_fn(void *arg) {
 static bool fb_render(const notification *notif,
                        const session_context *ctx) {
     (void)ctx;  // session_context not needed for rendering
+
+    // If a previous defense thread is still running, dismiss it cleanly
+    // before starting a new render.  fb_dismiss() acquires fb_mutex
+    // internally and joins the thread, so call it before we lock.
+    if (defense_running) {
+        log_debug("engine_fb: dismissing previous notification before render");
+        fb_dismiss();
+    }
 
     // Get config — for now use defaults. The daemon will provide the real
     // config through a global or parameter in the future.
