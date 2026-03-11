@@ -200,32 +200,10 @@ bool terminal_render_tmux(const ssh_pty_info *pty,
     int duration_secs = (timeout_ms > 0 ? timeout_ms : 5000) / 1000;
     if (duration_secs < 1) duration_secs = 1;
 
-    // Try display-popup first (tmux >= 3.2)
-    {
-        char msg[512];
-        snprintf(msg, sizeof(msg), "%s%s%s",
-                 title, (title[0] && body[0]) ? ": " : "", body);
-
-        // Build the popup command string (tmux runs this via its internal shell)
-        char popup_cmd[1024];
-        snprintf(popup_cmd, sizeof(popup_cmd), "echo '%s'; sleep %d",
-                 msg, duration_secs);
-        // Note: single quotes in msg would break the echo, but this is a
-        // pre-existing v1 limitation (the old system() code had the same issue).
-
-        char *popup_argv[] = {
-            "tmux", "-S", tmux_socket,
-            "display-popup", "-w", "50", "-h", "6", "-E",
-            popup_cmd, NULL
-        };
-        int rc = run_tmux(popup_argv);
-        if (rc == 0) {
-            log_info("ssh: tmux display-popup sent via %s", tmux_socket);
-            return true;
-        }
-    }
-
-    // Fallback: display-message (works on all tmux versions)
+    // Use display-message (safe: no shell invocation, just a direct argument).
+    // Note: display-popup -E was removed because it passes its argument to a
+    // shell, allowing command injection via notification body text.  Since the
+    // daemon runs as root, that would mean arbitrary root code execution.
     {
         char msg[512];
         snprintf(msg, sizeof(msg), "[lnotify] %s%s%s",

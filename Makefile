@@ -17,7 +17,7 @@ ifeq ($(FREETYPE),1)
 endif
 DAEMON_SRC = src/daemon/main.c src/daemon/socket.c src/daemon/ssh_delivery.c $(COMMON_SRC)
 CLIENT_SRC = src/client/main.c src/daemon/socket.c $(COMMON_SRC)
-TEST_SRC   = tests/test_main.c tests/test_notification.c tests/test_protocol.c tests/test_config.c tests/test_resolver.c tests/test_queue.c tests/test_render_util.c $(COMMON_SRC)
+TEST_SRC   = tests/test_main.c tests/test_notification.c tests/test_protocol.c tests/test_config.c tests/test_resolver.c tests/test_queue.c tests/test_render_util.c tests/test_engine_terminal.c $(COMMON_SRC)
 
 .PHONY: all clean test daemon client
 
