@@ -167,6 +167,34 @@ static void fb_draw_rounded_border(int rx, int ry, int rw, int rh,
 }
 
 // -------------------------------------------------------------------
+//  Font metrics helper
+// -------------------------------------------------------------------
+
+typedef struct {
+    int title_px;      // title font size in pixels
+    int body_px;       // body font size in pixels
+    int title_h;       // title line height
+    int body_h;        // body line height
+    int line_spacing;  // vertical gap between title and body
+} fb_font_metrics;
+
+// Compute font metrics from config.  Both fb_compute_geometry() and
+// fb_draw_toast() need the same values — this avoids duplication.
+static fb_font_metrics fb_calc_font_metrics(const lnotify_config *cfg) {
+    fb_font_metrics m;
+    m.title_px = cfg->font_size;
+    if (m.title_px < 8) m.title_px = 8;
+    m.body_px = cfg->font_size * 3 / 4;
+    if (m.body_px < 8) m.body_px = 8;
+
+    m.title_h = m.title_px;
+    m.body_h  = m.body_px;
+    m.line_spacing = m.body_h / 2;
+    if (m.line_spacing < 2) m.line_spacing = 2;
+    return m;
+}
+
+// -------------------------------------------------------------------
 //  fb_draw_toast — draws the complete toast into the framebuffer
 // -------------------------------------------------------------------
 
@@ -174,24 +202,16 @@ static void fb_draw_rounded_border(int rx, int ry, int rw, int rh,
 // Must be called before fb_draw_toast and fb_save_region.
 static void fb_compute_geometry(const notification *notif,
                                  const lnotify_config *cfg) {
-    int title_px = cfg->font_size;
-    if (title_px < 8) title_px = 8;
-    int body_px = cfg->font_size * 3 / 4;
-    if (body_px < 8) body_px = 8;
+    fb_font_metrics m = fb_calc_font_metrics(cfg);
 
-    int title_h = title_px;
-    int body_h  = body_px;
-    int line_spacing = body_h / 2;
-    if (line_spacing < 2) line_spacing = 2;
-
-    int title_w = g_font.text_width(notif->title, title_px);
-    int body_w  = g_font.text_width(notif->body, body_px);
+    int title_w = g_font.text_width(notif->title, m.title_px);
+    int body_w  = g_font.text_width(notif->body, m.body_px);
     int content_w = title_w > body_w ? title_w : body_w;
     int content_h = 0;
     if (notif->title) {
-        content_h += title_h + line_spacing;
+        content_h += m.title_h + m.line_spacing;
     }
-    content_h += body_h;
+    content_h += m.body_h;
 
     int toast_w = content_w + 2 * cfg->padding + 2 * cfg->border_width;
     int toast_h = content_h + 2 * cfg->padding + 2 * cfg->border_width;
@@ -207,15 +227,7 @@ static void fb_compute_geometry(const notification *notif,
 // fb_compute_geometry first).
 static void fb_draw_toast(const notification *notif,
                            const lnotify_config *cfg) {
-    int title_px = cfg->font_size;
-    if (title_px < 8) title_px = 8;
-    int body_px = cfg->font_size * 3 / 4;
-    if (body_px < 8) body_px = 8;
-
-    int title_h = title_px;
-    int body_h  = body_px;
-    int line_spacing = body_h / 2;
-    if (line_spacing < 2) line_spacing = 2;
+    fb_font_metrics m = fb_calc_font_metrics(cfg);
 
     // Draw background (rounded rect)
     fb_draw_rounded_rect(saved_geom.x, saved_geom.y,
@@ -236,11 +248,11 @@ static void fb_draw_toast(const notification *notif,
 
     if (notif->title) {
         g_font.draw_text(fb_map, fb_width, fb_height, fb_stride,
-                         notif->title, text_x, text_y, title_px, &cfg->fg_color);
-        text_y += title_h + line_spacing;
+                         notif->title, text_x, text_y, m.title_px, &cfg->fg_color);
+        text_y += m.title_h + m.line_spacing;
     }
     g_font.draw_text(fb_map, fb_width, fb_height, fb_stride,
-                     notif->body, text_x, text_y, body_px, &cfg->fg_color);
+                     notif->body, text_x, text_y, m.body_px, &cfg->fg_color);
 }
 
 // -------------------------------------------------------------------
