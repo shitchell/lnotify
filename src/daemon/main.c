@@ -1,3 +1,7 @@
+#ifndef _GNU_SOURCE
+#define _GNU_SOURCE
+#endif
+
 #include "config.h"
 #include "engine.h"
 #include "engine_dbus.h"
@@ -428,7 +432,7 @@ int main(int argc, char *argv[]) {
     }
 
     // Open sysfs VT file for poll()-based VT switch detection
-    int vt_fd = open(VT_SYSFS_PATH, O_RDONLY);
+    int vt_fd = open(VT_SYSFS_PATH, O_RDONLY | O_CLOEXEC);
     bool have_vt_monitor = (vt_fd >= 0);
 
     if (!have_vt_monitor) {
@@ -527,7 +531,7 @@ int main(int argc, char *argv[]) {
 
         // Check for incoming client connections
         if (fds[POLL_SOCKET].revents & POLLIN) {
-            int client_fd = accept(server_fd, NULL, NULL);
+            int client_fd = accept4(server_fd, NULL, NULL, SOCK_CLOEXEC);
             if (client_fd < 0) {
                 if (!g_running) break;
                 log_error("accept: %s", strerror(errno));

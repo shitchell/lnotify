@@ -197,7 +197,7 @@ int main(int argc, char *argv[]) {
     int fd = -1;
     const char *connected_path = NULL;
     for (int i = 0; i < try_count; i++) {
-        fd = socket(AF_UNIX, SOCK_STREAM, 0);
+        fd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
         if (fd < 0) {
             fprintf(stderr, "error: socket(): %s\n", strerror(errno));
             notification_free(&notif);

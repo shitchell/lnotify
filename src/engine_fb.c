@@ -507,7 +507,7 @@ static bool fb_render(const notification *notif,
     pthread_mutex_lock(&fb_mutex);
 
     // Open framebuffer device
-    fb_fd = open("/dev/fb0", O_RDWR);
+    fb_fd = open("/dev/fb0", O_RDWR | O_CLOEXEC);
     if (fb_fd < 0) {
         log_error("engine_fb: cannot open /dev/fb0: %s", strerror(errno));
         pthread_mutex_unlock(&fb_mutex);

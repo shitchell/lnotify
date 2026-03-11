@@ -26,7 +26,7 @@ int socket_listen(const char *path) {
         return -1;
     }
 
-    int fd = socket(AF_UNIX, SOCK_STREAM, 0);
+    int fd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
     if (fd < 0) {
         log_error("socket(): %s", strerror(errno));
         return -1;

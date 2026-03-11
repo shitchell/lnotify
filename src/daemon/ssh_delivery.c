@@ -330,7 +330,7 @@ int ssh_deliver(const notification *notif, const lnotify_config *cfg) {
         }
 
         // Open the pty
-        int pty_fd = open(pty->pty_path, O_WRONLY | O_NOCTTY);
+        int pty_fd = open(pty->pty_path, O_WRONLY | O_NOCTTY | O_CLOEXEC);
         if (pty_fd < 0) {
             log_error("ssh: could not open %s: %s",
                       pty->pty_path, strerror(errno));

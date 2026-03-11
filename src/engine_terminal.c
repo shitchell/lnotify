@@ -22,7 +22,7 @@ char *read_proc_env(pid_t pid, const char *name) {
     char env_path[64];
     snprintf(env_path, sizeof(env_path), "/proc/%d/environ", (int)pid);
 
-    int fd = open(env_path, O_RDONLY);
+    int fd = open(env_path, O_RDONLY | O_CLOEXEC);
     if (fd < 0) return NULL;
 
     char buf[8192];
@@ -160,7 +160,7 @@ static int run_tmux(char *const argv[]) {
     }
     if (pid == 0) {
         // Suppress stdout/stderr (replaces 2>/dev/null from system() calls)
-        int devnull = open("/dev/null", O_WRONLY);
+        int devnull = open("/dev/null", O_WRONLY | O_CLOEXEC);
         if (devnull >= 0) {
             dup2(devnull, STDERR_FILENO);
             dup2(devnull, STDOUT_FILENO);
