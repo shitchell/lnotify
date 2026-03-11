@@ -144,7 +144,10 @@ int main(int argc, char *argv[]) {
 
     // Build notification
     notification notif;
-    notification_init(&notif, title, body);
+    if (notification_init(&notif, title, body) < 0) {
+        fprintf(stderr, "error: notification allocation failed\n");
+        return 1;
+    }
     notif.priority = priority;
     notif.timeout_ms = timeout_ms;
     notif.app = app ? strdup(app) : NULL;

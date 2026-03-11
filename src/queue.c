@@ -22,6 +22,16 @@ static notif_node *node_from_notif(const notification *n) {
     node->notif.ts_received = n->ts_received;
     node->notif.ts_mono     = n->ts_mono;
     node->next = NULL;
+
+    // Check for strdup failures on non-NULL inputs
+    if ((n->title && !node->notif.title) ||
+        (n->body  && !node->notif.body)  ||
+        (n->app   && !node->notif.app)   ||
+        (n->group_id && !node->notif.group_id)) {
+        notification_free(&node->notif);
+        free(node);
+        return NULL;
+    }
     return node;
 }
 

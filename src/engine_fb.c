@@ -499,7 +499,10 @@ static bool fb_render(const notification *notif,
     // config through a global or parameter in the future.
     // TODO: Pass config through a global or extend the engine vtable.
     lnotify_config cfg;
-    config_defaults(&cfg);
+    if (config_defaults(&cfg) < 0) {
+        log_error("engine_fb: config_defaults allocation failed");
+        return false;
+    }
 
     pthread_mutex_lock(&fb_mutex);
 
@@ -600,7 +603,13 @@ static bool fb_render(const notification *notif,
     log_debug("engine_fb: toast verified visible");
 
     // Prepare defense thread state
-    notification_init(&defense_notif, notif->title, notif->body);
+    if (notification_init(&defense_notif, notif->title, notif->body) < 0) {
+        log_error("engine_fb: notification_init failed for defense copy");
+        fb_cleanup_unlocked();
+        pthread_mutex_unlock(&fb_mutex);
+        config_free(&cfg);
+        return false;
+    }
     defense_notif.priority   = notif->priority;
     defense_notif.timeout_ms = notif->timeout_ms;
     defense_notif.ts_mono    = notif->ts_mono;
@@ -616,7 +625,10 @@ static bool fb_render(const notification *notif,
     }
     active_config = malloc(sizeof(lnotify_config));
     if (active_config) {
-        config_defaults(active_config);
+        if (config_defaults(active_config) < 0) {
+            free(active_config);
+            active_config = NULL;
+        }
         // Copy style values from cfg (they're already defaults, but this
         // pattern is ready for when we receive the real config)
     }

@@ -25,6 +25,12 @@ void context_init_from_logind(session_context *ctx, uint32_t vt) {
     ctx->terminal_type       = NULL;
     ctx->foreground_process  = NULL;
 
+    // Check initial strdup calls (OOM: leave fields NULL, log once)
+    if (!ctx->username || !ctx->session_type ||
+        !ctx->session_class || !ctx->seat) {
+        log_error("context_init_from_logind: strdup failed for defaults");
+    }
+
     logind_session session;
     if (logind_get_session_by_vt(vt, &session) < 0) {
         log_debug("context_init_from_logind: no session found for VT %u", vt);
@@ -33,26 +39,37 @@ void context_init_from_logind(session_context *ctx, uint32_t vt) {
 
     log_debug("context_init_from_logind: VT %u -> session %s", vt, session.session_id);
 
-    // Transfer fields (replace defaults)
-    free((void *)ctx->session_type);
-    ctx->session_type = strdup(session.type ? session.type : "");
+    // Transfer fields (replace defaults). Use set_str pattern: only replace
+    // if strdup succeeds, so OOM doesn't destroy existing value.
+    char *tmp;
 
-    free((void *)ctx->session_class);
-    ctx->session_class = strdup(session.session_class ? session.session_class : "");
+    tmp = strdup(session.type ? session.type : "");
+    if (tmp) { free((void *)ctx->session_type); ctx->session_type = tmp; }
+    else { log_error("context_init_from_logind: strdup failed for session_type"); }
 
-    free((void *)ctx->username);
-    ctx->username = strdup(session.username ? session.username : "");
+    tmp = strdup(session.session_class ? session.session_class : "");
+    if (tmp) { free((void *)ctx->session_class); ctx->session_class = tmp; }
+    else { log_error("context_init_from_logind: strdup failed for session_class"); }
 
-    free((void *)ctx->seat);
-    ctx->seat = strdup(session.seat ? session.seat : "");
+    tmp = strdup(session.username ? session.username : "");
+    if (tmp) { free((void *)ctx->username); ctx->username = tmp; }
+    else { log_error("context_init_from_logind: strdup failed for username"); }
+
+    tmp = strdup(session.seat ? session.seat : "");
+    if (tmp) { free((void *)ctx->seat); ctx->seat = tmp; }
+    else { log_error("context_init_from_logind: strdup failed for seat"); }
 
     ctx->uid = session.uid;
     ctx->remote = session.remote;
 
     log_debug("context_init_from_logind: type=%s class=%s user=%s(%u) "
               "seat=%s remote=%d",
-              ctx->session_type, ctx->session_class, ctx->username,
-              ctx->uid, ctx->seat, ctx->remote);
+              ctx->session_type ? ctx->session_type : "(null)",
+              ctx->session_class ? ctx->session_class : "(null)",
+              ctx->username ? ctx->username : "(null)",
+              ctx->uid,
+              ctx->seat ? ctx->seat : "(null)",
+              ctx->remote);
 
     logind_session_free(&session);
 }

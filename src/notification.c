@@ -13,13 +13,20 @@ uint64_t wallclock_ms(void) {
     return (uint64_t)ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
 }
 
-void notification_init(notification *n, const char *title, const char *body) {
+int notification_init(notification *n, const char *title, const char *body) {
     memset(n, 0, sizeof(*n));
     n->title = title ? strdup(title) : NULL;
     n->body = body ? strdup(body) : NULL;
     n->priority = 1;        // normal
     n->timeout_ms = -1;     // use config default
     n->ts_sent = wallclock_ms();
+
+    // Check for strdup failures on non-NULL inputs
+    if ((title && !n->title) || (body && !n->body)) {
+        notification_free(n);
+        return -1;
+    }
+    return 0;
 }
 
 void notification_free(notification *n) {

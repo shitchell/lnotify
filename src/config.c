@@ -20,10 +20,13 @@ static char *trim(char *s) {
     return s;
 }
 
-// Replace a heap-allocated string field. Frees old value, strdup's new.
+// Replace a heap-allocated string field. Frees old value only if strdup
+// succeeds, so that OOM doesn't destroy the existing value.
 static void set_str(char **field, const char *value) {
+    char *copy = strdup(value);
+    if (!copy) return;  // OOM: keep existing value
     free(*field);
-    *field = strdup(value);
+    *field = copy;
 }
 
 // Parse a boolean value: "true"/"1"/"yes" -> true, everything else -> false.
@@ -75,7 +78,7 @@ int config_parse_color(const char *str, lnotify_color *out) {
 // Defaults
 // ---------------------------------------------------------------------------
 
-void config_defaults(lnotify_config *cfg) {
+int config_defaults(lnotify_config *cfg) {
     memset(cfg, 0, sizeof(*cfg));
 
     cfg->default_timeout = 5000;
@@ -101,6 +104,15 @@ void config_defaults(lnotify_config *cfg) {
 
     cfg->socket_path = NULL;  // auto-detect via socket_default_path()
     cfg->engine_priorities = strdup("dbus,framebuffer,terminal,queue");
+
+    // Check all strdup'd fields for OOM
+    if (!cfg->position || !cfg->font_name || !cfg->font_path ||
+        !cfg->ssh_modes || !cfg->ssh_fullscreen_apps ||
+        !cfg->ssh_groups || !cfg->ssh_users || !cfg->engine_priorities) {
+        config_free(cfg);
+        return -1;
+    }
+    return 0;
 }
 
 // ---------------------------------------------------------------------------

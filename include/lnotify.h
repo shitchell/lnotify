@@ -27,7 +27,8 @@ uint64_t monotonic_ms(void);
 uint64_t wallclock_ms(void);
 
 // Initialize a notification with defaults. Copies title and body strings.
-void notification_init(notification *n, const char *title, const char *body);
+// Returns 0 on success, -1 on allocation failure.
+int notification_init(notification *n, const char *title, const char *body);
 
 // Free owned strings in a notification.
 void notification_free(notification *n);

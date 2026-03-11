@@ -345,7 +345,10 @@ int main(int argc, char *argv[]) {
     init_engines();
 
     // Load configuration: --config overrides --system default
-    config_defaults(&g_config);
+    if (config_defaults(&g_config) < 0) {
+        fprintf(stderr, "error: config allocation failed\n");
+        return 1;
+    }
     if (config_path_override) {
         if (config_load(&g_config, config_path_override) != 0) {
             fprintf(stderr, "error: cannot load config '%s'\n",

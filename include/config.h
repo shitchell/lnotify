@@ -47,7 +47,8 @@ typedef struct {
 } lnotify_config;
 
 // Populate cfg with hardcoded defaults. All string fields are strdup'd.
-void config_defaults(lnotify_config *cfg);
+// Returns 0 on success, -1 on allocation failure.
+int config_defaults(lnotify_config *cfg);
 
 // Load config from file, overriding defaults already set in cfg.
 // Returns 0 on success, -1 if the file cannot be opened.
