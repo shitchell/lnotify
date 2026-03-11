@@ -177,4 +177,35 @@ void test_protocol_suite(void) {
         ssize_t len = protocol_serialize(&orig, buf, sizeof(buf));
         ASSERT_TRUE(len < 0, "serialize fails with NULL body");
     }
+
+    // Test: string exceeding UINT16_MAX is rejected
+    {
+        size_t oversized_len = (size_t)UINT16_MAX + 1;
+        char *big = malloc(oversized_len + 1);
+        ASSERT_TRUE(big != NULL, "malloc oversized string");
+        memset(big, 'A', oversized_len);
+        big[oversized_len] = '\0';
+
+        notification orig = {0};
+        notification_init(&orig, NULL, big);
+
+        // Buffer large enough for the data if it were allowed
+        size_t buflen = PROTOCOL_HEADER_SIZE + 2 + oversized_len + 64;
+        uint8_t *buf = malloc(buflen);
+        ASSERT_TRUE(buf != NULL, "malloc oversized buffer");
+
+        ssize_t len = protocol_serialize(&orig, buf, buflen);
+        ASSERT_TRUE(len < 0, "serialize rejects body exceeding UINT16_MAX");
+
+        // Also test with oversized title
+        notification orig2 = {0};
+        notification_init(&orig2, big, "ok body");
+        ssize_t len2 = protocol_serialize(&orig2, buf, buflen);
+        ASSERT_TRUE(len2 < 0, "serialize rejects title exceeding UINT16_MAX");
+
+        free(buf);
+        free(big);
+        notification_free(&orig);
+        notification_free(&orig2);
+    }
 }

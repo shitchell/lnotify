@@ -55,9 +55,11 @@ static int32_t read_i32(const uint8_t *buf) {
 }
 
 // Helper: write a length-prefixed string (uint16 len + bytes, no NUL)
-// Returns bytes written, or -1 if it won't fit.
+// Returns bytes written, or -1 if it won't fit or string exceeds uint16 max.
 static ssize_t write_string(uint8_t *buf, size_t remaining, const char *str) {
-    uint16_t slen = (uint16_t)strlen(str);
+    size_t raw_len = strlen(str);
+    if (raw_len > UINT16_MAX) return -1;
+    uint16_t slen = (uint16_t)raw_len;
     size_t need = 2 + (size_t)slen;
     if (remaining < need) return -1;
     write_u16(buf, slen);
