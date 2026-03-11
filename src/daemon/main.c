@@ -138,7 +138,17 @@ static void handle_dry_run(int client_fd, notification *notif,
 
     char response[4096];
     int pos = 0;
-    int remaining = (int)sizeof(response);
+    const int bufsize = (int)sizeof(response);
+    int remaining = bufsize;
+
+    // Helper: after each snprintf, clamp pos so it never exceeds the buffer.
+    // snprintf returns the number of chars that *would* have been written
+    // (excluding NUL), which can exceed the available space. Without clamping,
+    // pos overshoots and the final write() would read past the buffer.
+    #define CLAMP_POS() do { \
+        if (pos >= bufsize) { pos = bufsize - 1; } \
+        remaining = bufsize - pos; \
+    } while (0)
 
     // VT info
     if (ctx->vt > 0) {
@@ -148,23 +158,23 @@ static void handle_dry_run(int client_fd, notification *notif,
         pos += snprintf(response + pos, (size_t)remaining,
                         "VT: (unknown)\n");
     }
-    remaining = (int)sizeof(response) - pos;
+    CLAMP_POS();
 
     // Session info
-    {
+    if (remaining > 1) {
         const char *stype = ctx->session_type ? ctx->session_type : "(unknown)";
         const char *sclass = ctx->session_class ? ctx->session_class : "(unknown)";
         const char *username = ctx->username ? ctx->username : "(unknown)";
         pos += snprintf(response + pos, (size_t)remaining,
                         "Session: %s, %s, uid=%u, user=%s\n",
                         stype, sclass, ctx->uid, username);
-        remaining = (int)sizeof(response) - pos;
+        CLAMP_POS();
     }
 
     // Probes run
-    {
+    if (remaining > 1) {
         pos += snprintf(response + pos, (size_t)remaining, "Probes run:");
-        remaining = (int)sizeof(response) - pos;
+        CLAMP_POS();
 
         // Save original probe state to detect what resolver adds
         uint32_t probes_before = ctx->probes_completed;
@@ -175,6 +185,7 @@ static void handle_dry_run(int client_fd, notification *notif,
         // Report all completed probes (including newly run ones)
         bool any_probe = false;
         for (int k = 0; k < PROBE_COUNT; k++) {
+            if (remaining <= 1) break;
             if (ctx->probes_completed & (1u << k)) {
                 const char *pname = probe_name((probe_key)k);
                 // Show probe result
@@ -200,47 +211,54 @@ static void handle_dry_run(int client_fd, notification *notif,
                 }
                 pos += snprintf(response + pos, (size_t)(remaining),
                                 " %s=%s", pname, val);
-                remaining = (int)sizeof(response) - pos;
+                CLAMP_POS();
                 any_probe = true;
             }
         }
-        if (!any_probe) {
+        if (!any_probe && remaining > 1) {
             pos += snprintf(response + pos, (size_t)remaining, " (none)");
-            remaining = (int)sizeof(response) - pos;
+            CLAMP_POS();
         }
-        pos += snprintf(response + pos, (size_t)remaining, "\n");
-        remaining = (int)sizeof(response) - pos;
+        if (remaining > 1) {
+            pos += snprintf(response + pos, (size_t)remaining, "\n");
+            CLAMP_POS();
+        }
 
         // Restore original probe state (dry-run should be side-effect-free
         // for subsequent notifications — probes will be re-run as needed)
         ctx->probes_completed = probes_before;
 
         // Engine selected
-        pos += snprintf(response + pos, (size_t)remaining,
-                        "Engine selected: %s\n",
-                        eng ? eng->name : "(none — would queue)");
-        remaining = (int)sizeof(response) - pos;
+        if (remaining > 1) {
+            pos += snprintf(response + pos, (size_t)remaining,
+                            "Engine selected: %s\n",
+                            eng ? eng->name : "(none — would queue)");
+            CLAMP_POS();
+        }
     }
 
     // SSH targets
-    {
+    if (remaining > 1) {
         ssh_pty_info ptys[64];
         int ssh_count = ssh_find_qualifying_ptys(&g_config, ptys, 64);
         if (ssh_count > 0) {
             for (int i = 0; i < ssh_count; i++) {
+                if (remaining <= 1) break;
                 // Determine which modes would be used
                 const char *modes = g_config.ssh_modes ? g_config.ssh_modes : "osc,overlay,text";
                 pos += snprintf(response + pos, (size_t)remaining,
                                 "SSH target: %s@%s (modes: %s)\n",
                                 ptys[i].username, ptys[i].pty_path, modes);
-                remaining = (int)sizeof(response) - pos;
+                CLAMP_POS();
             }
         } else {
             pos += snprintf(response + pos, (size_t)remaining,
                             "SSH targets: (none)\n");
-            remaining = (int)sizeof(response) - pos;
+            CLAMP_POS();
         }
     }
+
+    #undef CLAMP_POS
 
     // Write response back to client
     ssize_t total_written = 0;
