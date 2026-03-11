@@ -81,12 +81,24 @@ int socket_handle_client(int client_fd, notification *out,
     uint8_t buf[MAX_MSG_SIZE];
     ssize_t total = 0;
 
+    // Guard against slow/malicious clients that connect but never send data.
+    // Without this, a single stalled client blocks the entire event loop.
+    struct timeval tv = { .tv_sec = 2, .tv_usec = 0 };
+    if (setsockopt(client_fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) < 0) {
+        log_error("setsockopt(SO_RCVTIMEO): %s", strerror(errno));
+    }
+
     // Read all data — client writes then shuts down write end
     // (shutdown SHUT_WR for dry-run so we can respond, or close for fire-and-forget)
     for (;;) {
         ssize_t n = read(client_fd, buf + total, (size_t)(MAX_MSG_SIZE - total));
         if (n < 0) {
             if (errno == EINTR) continue;
+            if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                log_error("client read timed out");
+                close(client_fd);
+                return -1;
+            }
             log_error("read from client: %s", strerror(errno));
             close(client_fd);
             return -1;
