@@ -341,11 +341,28 @@ bool terminal_render_overlay(int pty_fd, const notification *notif,
     log_info("ssh: cursor overlay written (%dx%d box)", box_width,
              cur_row);
 
-    // Schedule dismiss: fork a child that sleeps then clears the overlay
+    // Schedule dismiss: use double-fork so the grandchild is reparented to
+    // init (PID 1) and the outer child exits immediately.  The parent reaps
+    // the outer child with waitpid() — no zombies, and no SA_NOCLDWAIT
+    // needed (which would break dbus_call_as_user's waitpid).
     int timeout = timeout_ms > 0 ? timeout_ms : 5000;
     pid_t pid = fork();
+    if (pid < 0) {
+        log_error("ssh: overlay dismiss fork failed: %s", strerror(errno));
+        return true;  // overlay was drawn successfully
+    }
     if (pid == 0) {
-        // Child: sleep, then clear the overlay region
+        // Outer child: fork again, then exit immediately
+        pid_t grandchild = fork();
+        if (grandchild < 0) {
+            _exit(1);
+        }
+        if (grandchild > 0) {
+            // Outer child exits — grandchild is reparented to init
+            _exit(0);
+        }
+
+        // Grandchild: sleep, then clear the overlay region
         usleep((useconds_t)timeout * 1000);
 
         int clear_n = 0;
@@ -375,8 +392,8 @@ bool terminal_render_overlay(int pty_fd, const notification *notif,
         _exit(0);
     }
 
-    // Parent: don't wait — let the child run in the background
-    // (it will be reaped by SIGCHLD or init)
+    // Parent: reap the outer child immediately (it exits right away)
+    waitpid(pid, NULL, 0);
 
     return true;
 }
