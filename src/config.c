@@ -29,6 +29,13 @@ static void set_str(char **field, const char *value) {
     *field = copy;
 }
 
+// Clamp an integer to [lo, hi].
+static int clamp_int(int val, int lo, int hi) {
+    if (val < lo) return lo;
+    if (val > hi) return hi;
+    return val;
+}
+
 // Parse a boolean value: "true"/"1"/"yes" -> true, everything else -> false.
 static bool parse_bool(const char *value) {
     return (strcmp(value, "true") == 0 ||
@@ -123,7 +130,7 @@ int config_defaults(lnotify_config *cfg) {
 static void config_set(lnotify_config *cfg, const char *key, const char *value) {
     // Display
     if (strcmp(key, "default_timeout") == 0) {
-        cfg->default_timeout = atoi(value);
+        cfg->default_timeout = clamp_int(atoi(value), 100, 300000);
     } else if (strcmp(key, "position") == 0) {
         set_str(&cfg->position, value);
     } else if (strcmp(key, "font_name") == 0) {
@@ -131,7 +138,7 @@ static void config_set(lnotify_config *cfg, const char *key, const char *value) 
     } else if (strcmp(key, "font_path") == 0) {
         set_str(&cfg->font_path, value);
     } else if (strcmp(key, "font_size") == 0) {
-        cfg->font_size = atoi(value);
+        cfg->font_size = clamp_int(atoi(value), 8, 200);
     }
     // Toast style
     else if (strcmp(key, "bg_color") == 0) {
@@ -144,13 +151,13 @@ static void config_set(lnotify_config *cfg, const char *key, const char *value) 
         if (config_parse_color(value, &cfg->border_color) != 0)
             log_debug("config: invalid color for border_color: %s", value);
     } else if (strcmp(key, "border_width") == 0) {
-        cfg->border_width = atoi(value);
+        cfg->border_width = clamp_int(atoi(value), 0, 50);
     } else if (strcmp(key, "border_radius") == 0) {
-        cfg->border_radius = atoi(value);
+        cfg->border_radius = clamp_int(atoi(value), 0, 100);
     } else if (strcmp(key, "padding") == 0) {
-        cfg->padding = atoi(value);
+        cfg->padding = clamp_int(atoi(value), 0, 500);
     } else if (strcmp(key, "margin") == 0) {
-        cfg->margin = atoi(value);
+        cfg->margin = clamp_int(atoi(value), 0, 500);
     }
     // SSH terminal notifications
     else if (strcmp(key, "ssh_modes") == 0) {

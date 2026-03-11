@@ -182,6 +182,125 @@ void test_config_suite(void) {
         remove(path);
     }
 
+    // Test: integer values are clamped to valid ranges
+    {
+        const char *path = "/tmp/lnotify_test_clamp.conf";
+
+        // Test values below minimum are clamped up
+        {
+            FILE *f = fopen(path, "w");
+            fprintf(f, "font_size = 0\n");
+            fprintf(f, "padding = -10\n");
+            fprintf(f, "margin = -1\n");
+            fprintf(f, "border_width = -5\n");
+            fprintf(f, "border_radius = -1\n");
+            fprintf(f, "default_timeout = 50\n");
+            fclose(f);
+
+            lnotify_config cfg;
+            config_defaults(&cfg);
+            config_load(&cfg, path);
+
+            ASSERT_EQ(cfg.font_size, 8, "font_size clamped to min 8");
+            ASSERT_EQ(cfg.padding, 0, "padding clamped to min 0");
+            ASSERT_EQ(cfg.margin, 0, "margin clamped to min 0");
+            ASSERT_EQ(cfg.border_width, 0, "border_width clamped to min 0");
+            ASSERT_EQ(cfg.border_radius, 0, "border_radius clamped to min 0");
+            ASSERT_EQ(cfg.default_timeout, 100, "default_timeout clamped to min 100");
+
+            config_free(&cfg);
+        }
+
+        // Test values above maximum are clamped down
+        {
+            FILE *f = fopen(path, "w");
+            fprintf(f, "font_size = 999\n");
+            fprintf(f, "padding = 1000\n");
+            fprintf(f, "margin = 1000\n");
+            fprintf(f, "border_width = 100\n");
+            fprintf(f, "border_radius = 200\n");
+            fprintf(f, "default_timeout = 999999\n");
+            fclose(f);
+
+            lnotify_config cfg;
+            config_defaults(&cfg);
+            config_load(&cfg, path);
+
+            ASSERT_EQ(cfg.font_size, 200, "font_size clamped to max 200");
+            ASSERT_EQ(cfg.padding, 500, "padding clamped to max 500");
+            ASSERT_EQ(cfg.margin, 500, "margin clamped to max 500");
+            ASSERT_EQ(cfg.border_width, 50, "border_width clamped to max 50");
+            ASSERT_EQ(cfg.border_radius, 100, "border_radius clamped to max 100");
+            ASSERT_EQ(cfg.default_timeout, 300000,
+                "default_timeout clamped to max 300000");
+
+            config_free(&cfg);
+        }
+
+        // Test values within range are unchanged
+        {
+            FILE *f = fopen(path, "w");
+            fprintf(f, "font_size = 24\n");
+            fprintf(f, "padding = 15\n");
+            fprintf(f, "margin = 40\n");
+            fprintf(f, "border_width = 3\n");
+            fprintf(f, "border_radius = 8\n");
+            fprintf(f, "default_timeout = 10000\n");
+            fclose(f);
+
+            lnotify_config cfg;
+            config_defaults(&cfg);
+            config_load(&cfg, path);
+
+            ASSERT_EQ(cfg.font_size, 24, "font_size in range unchanged");
+            ASSERT_EQ(cfg.padding, 15, "padding in range unchanged");
+            ASSERT_EQ(cfg.margin, 40, "margin in range unchanged");
+            ASSERT_EQ(cfg.border_width, 3, "border_width in range unchanged");
+            ASSERT_EQ(cfg.border_radius, 8, "border_radius in range unchanged");
+            ASSERT_EQ(cfg.default_timeout, 10000,
+                "default_timeout in range unchanged");
+
+            config_free(&cfg);
+        }
+
+        // Test exact boundary values are accepted
+        {
+            FILE *f = fopen(path, "w");
+            fprintf(f, "font_size = 8\n");
+            fprintf(f, "default_timeout = 100\n");
+            fclose(f);
+
+            lnotify_config cfg;
+            config_defaults(&cfg);
+            config_load(&cfg, path);
+
+            ASSERT_EQ(cfg.font_size, 8, "font_size at min boundary");
+            ASSERT_EQ(cfg.default_timeout, 100,
+                "default_timeout at min boundary");
+
+            config_free(&cfg);
+        }
+
+        {
+            FILE *f = fopen(path, "w");
+            fprintf(f, "font_size = 200\n");
+            fprintf(f, "default_timeout = 300000\n");
+            fclose(f);
+
+            lnotify_config cfg;
+            config_defaults(&cfg);
+            config_load(&cfg, path);
+
+            ASSERT_EQ(cfg.font_size, 200, "font_size at max boundary");
+            ASSERT_EQ(cfg.default_timeout, 300000,
+                "default_timeout at max boundary");
+
+            config_free(&cfg);
+        }
+
+        remove(path);
+    }
+
     // Test: boolean parsing
     {
         const char *path = "/tmp/lnotify_test_bool.conf";
