@@ -5,6 +5,20 @@
 #include <stdint.h>
 #include "config.h"
 
+// Clipped rectangle (screen-space pixel coordinates).
+typedef struct { int x0, y0, x1, y1; } clip_rect;
+
+// Clip a rectangle (x,y,w,h) to buffer bounds (buf_w x buf_h).
+static inline clip_rect clip_to_bounds(int x, int y, int w, int h,
+                                        int buf_w, int buf_h) {
+    clip_rect c;
+    c.x0 = x < 0 ? 0 : x;
+    c.y0 = y < 0 ? 0 : y;
+    c.x1 = x + w > buf_w ? buf_w : x + w;
+    c.y1 = y + h > buf_h ? buf_h : y + h;
+    return c;
+}
+
 // Toast position and dimensions on screen
 typedef struct {
     int x;
