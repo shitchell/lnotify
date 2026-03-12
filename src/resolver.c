@@ -3,6 +3,9 @@
 
 #include <stdint.h>
 
+_Static_assert(MAX_ENGINES <= 32,
+               "resolver rejected bitfield requires MAX_ENGINES <= 32");
+
 engine *resolver_select(engine *engines, int count, session_context *ctx,
                         probe_fn run_probe) {
     if (!engines || count <= 0)
