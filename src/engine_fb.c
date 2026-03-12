@@ -108,22 +108,14 @@ static void fb_draw_rounded_rect(int rx, int ry, int rw, int rh,
     color_to_bgra(color, bgra);
 
     // Clip to screen
-    int x0 = rx < 0 ? 0 : rx;
-    int y0 = ry < 0 ? 0 : ry;
-    int x1 = rx + rw;
-    int y1 = ry + rh;
-    if (x1 > fb_width)  x1 = fb_width;
-    if (y1 > fb_height) y1 = fb_height;
+    clip_rect cr = clip_to_bounds(rx, ry, rw, rh, fb_width, fb_height);
 
-    for (int py = y0; py < y1; py++) {
+    for (int py = cr.y0; py < cr.y1; py++) {
         uint8_t *row_ptr = fb_map + py * fb_stride;
-        for (int px = x0; px < x1; px++) {
+        for (int px = cr.x0; px < cr.x1; px++) {
             if (point_in_rounded_rect(px, py, rx, ry, rw, rh, radius)) {
                 uint8_t *pixel = row_ptr + px * 4;
-                pixel[0] = bgra[0];
-                pixel[1] = bgra[1];
-                pixel[2] = bgra[2];
-                pixel[3] = bgra[3];
+                memcpy(pixel, bgra, 4);
             }
         }
     }
@@ -136,18 +128,13 @@ static void fb_draw_rounded_border(int rx, int ry, int rw, int rh,
     uint8_t bgra[4];
     color_to_bgra(color, bgra);
 
-    int x0 = rx < 0 ? 0 : rx;
-    int y0 = ry < 0 ? 0 : ry;
-    int x1 = rx + rw;
-    int y1 = ry + rh;
-    if (x1 > fb_width)  x1 = fb_width;
-    if (y1 > fb_height) y1 = fb_height;
+    clip_rect cr = clip_to_bounds(rx, ry, rw, rh, fb_width, fb_height);
 
     int inner_radius = radius > border_w ? radius - border_w : 0;
 
-    for (int py = y0; py < y1; py++) {
+    for (int py = cr.y0; py < cr.y1; py++) {
         uint8_t *row_ptr = fb_map + py * fb_stride;
-        for (int px = x0; px < x1; px++) {
+        for (int px = cr.x0; px < cr.x1; px++) {
             bool in_outer = point_in_rounded_rect(px, py, rx, ry, rw, rh,
                                                    radius);
             bool in_inner = point_in_rounded_rect(px, py,
@@ -158,10 +145,7 @@ static void fb_draw_rounded_border(int rx, int ry, int rw, int rh,
                                                    inner_radius);
             if (in_outer && !in_inner) {
                 uint8_t *pixel = row_ptr + px * 4;
-                pixel[0] = bgra[0];
-                pixel[1] = bgra[1];
-                pixel[2] = bgra[2];
-                pixel[3] = bgra[3];
+                memcpy(pixel, bgra, 4);
             }
         }
     }

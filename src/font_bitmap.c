@@ -245,10 +245,7 @@ static void bitmap_draw_text(uint8_t *fb, int fb_w, int fb_h, int stride,
                             int px = cx + col * scale + sx;
                             if (px < 0 || px >= fb_w) continue;
                             uint8_t *pixel = row_ptr + px * 4;
-                            pixel[0] = bgra[0];
-                            pixel[1] = bgra[1];
-                            pixel[2] = bgra[2];
-                            pixel[3] = bgra[3];
+                            memcpy(pixel, bgra, 4);
                         }
                     }
                 }

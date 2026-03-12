@@ -65,10 +65,7 @@ static void freetype_draw_text(uint8_t *fb, int fb_w, int fb_h, int stride,
                 if (alpha == 0) continue;
                 uint8_t *pixel = fb + py * stride + px * 4;
                 if (alpha == 255) {
-                    pixel[0] = bgra[0];
-                    pixel[1] = bgra[1];
-                    pixel[2] = bgra[2];
-                    pixel[3] = bgra[3];
+                    memcpy(pixel, bgra, 4);
                 } else {
                     uint8_t inv = 255 - alpha;
                     pixel[0] = (uint8_t)((bgra[0] * alpha + pixel[0] * inv) / 255);

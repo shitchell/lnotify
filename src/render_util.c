@@ -98,21 +98,13 @@ void render_fill_rect(uint8_t *buf, int stride, int buf_w, int buf_h,
     color_to_bgra(color, bgra);
 
     // Clip to buffer bounds
-    int x0 = x < 0 ? 0 : x;
-    int y0 = y < 0 ? 0 : y;
-    int x1 = x + w;
-    int y1 = y + h;
-    if (x1 > buf_w) x1 = buf_w;
-    if (y1 > buf_h) y1 = buf_h;
+    clip_rect c = clip_to_bounds(x, y, w, h, buf_w, buf_h);
 
-    for (int row = y0; row < y1; row++) {
+    for (int row = c.y0; row < c.y1; row++) {
         uint8_t *row_ptr = buf + row * stride;
-        for (int col = x0; col < x1; col++) {
+        for (int col = c.x0; col < c.x1; col++) {
             uint8_t *px = row_ptr + col * 4;
-            px[0] = bgra[0];
-            px[1] = bgra[1];
-            px[2] = bgra[2];
-            px[3] = bgra[3];
+            memcpy(px, bgra, 4);
         }
     }
 }
