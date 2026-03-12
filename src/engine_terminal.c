@@ -371,24 +371,39 @@ bool terminal_render_overlay(int pty_fd, const notification *notif,
         // Save cursor
         clear_n += snprintf(clear_buf + clear_n,
                             sizeof(clear_buf) - (size_t)clear_n, "\033[s");
+        if (clear_n >= (int)sizeof(clear_buf))
+            clear_n = (int)sizeof(clear_buf) - 1;
 
         // Clear each row of the overlay
         for (int row = 1; row <= cur_row; row++) {
             clear_n += snprintf(clear_buf + clear_n,
                                 sizeof(clear_buf) - (size_t)clear_n,
                                 "\033[%d;%dH", row, start_col);
+            if (clear_n >= (int)sizeof(clear_buf)) {
+                clear_n = (int)sizeof(clear_buf) - 1;
+                break;
+            }
             for (int i = 0; i < box_width; i++) {
                 clear_n += snprintf(clear_buf + clear_n,
                                     sizeof(clear_buf) - (size_t)clear_n,
                                     " ");
+                if (clear_n >= (int)sizeof(clear_buf)) {
+                    clear_n = (int)sizeof(clear_buf) - 1;
+                    break;
+                }
             }
+            if (clear_n >= (int)sizeof(clear_buf) - 1)
+                break;
         }
 
         // Restore cursor
         clear_n += snprintf(clear_buf + clear_n,
                             sizeof(clear_buf) - (size_t)clear_n, "\033[u");
+        if (clear_n >= (int)sizeof(clear_buf))
+            clear_n = (int)sizeof(clear_buf) - 1;
 
         (void)write(pty_fd, clear_buf, (size_t)clear_n);
+        close(pty_fd);
         _exit(0);
     }
 
