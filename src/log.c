@@ -6,10 +6,10 @@
 bool log_debug_enabled = false;
 
 static void log_msg(const char *level, const char *fmt, va_list args) {
-    struct timespec ts;
+    struct timespec ts = {0};
     clock_gettime(CLOCK_MONOTONIC, &ts);
     fprintf(stderr, "[%6ld.%03lds] %s: ",
-            ts.tv_sec, ts.tv_nsec / 1000000, level);
+            (long)ts.tv_sec, (long)(ts.tv_nsec / 1000000), level);
     vfprintf(stderr, fmt, args);
     fprintf(stderr, "\n");
     fflush(stderr);

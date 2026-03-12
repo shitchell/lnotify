@@ -434,8 +434,10 @@ int main(int argc, char *argv[]) {
     sa.sa_handler = signal_handler;
     sigemptyset(&sa.sa_mask);
     sa.sa_flags = 0;  // no SA_RESTART — we want poll() to be interrupted
-    sigaction(SIGINT, &sa, NULL);
-    sigaction(SIGTERM, &sa, NULL);
+    if (sigaction(SIGINT, &sa, NULL) < 0 || sigaction(SIGTERM, &sa, NULL) < 0) {
+        log_error("sigaction failed: %s", strerror(errno));
+        return 1;
+    }
 
     // Start listening on Unix socket
     int server_fd = socket_listen(g_socket_path);
