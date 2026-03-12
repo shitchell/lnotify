@@ -10,6 +10,7 @@
 #include <fcntl.h>
 #include <linux/fb.h>
 #include <pthread.h>
+#include <stdatomic.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -44,7 +45,7 @@ static int           verify_y[VERIFY_SAMPLE_COUNT];
 
 // Defense thread
 static pthread_t    defense_thread;
-static bool         defense_running = false;
+static _Atomic bool defense_running = false;
 static bool         defense_stop    = false;
 
 // Notification info the defense thread needs for re-render and queue fallback
