@@ -539,15 +539,15 @@ static bool fb_render(const notification *notif,
         return false;
     }
 
+    bool result = false;
+
     pthread_mutex_lock(&fb_mutex);
 
     // Open framebuffer device
     fb_fd = open("/dev/fb0", O_RDWR | O_CLOEXEC);
     if (fb_fd < 0) {
         log_error("engine_fb: cannot open /dev/fb0: %s", strerror(errno));
-        pthread_mutex_unlock(&fb_mutex);
-        config_free(&cfg);
-        return false;
+        goto cleanup;
     }
 
     // Get screen info
@@ -557,20 +557,12 @@ static bool fb_render(const notification *notif,
     if (ioctl(fb_fd, FBIOGET_VSCREENINFO, &vinfo) < 0) {
         log_error("engine_fb: FBIOGET_VSCREENINFO failed: %s",
                   strerror(errno));
-        close(fb_fd);
-        fb_fd = -1;
-        pthread_mutex_unlock(&fb_mutex);
-        config_free(&cfg);
-        return false;
+        goto cleanup;
     }
     if (ioctl(fb_fd, FBIOGET_FSCREENINFO, &finfo) < 0) {
         log_error("engine_fb: FBIOGET_FSCREENINFO failed: %s",
                   strerror(errno));
-        close(fb_fd);
-        fb_fd = -1;
-        pthread_mutex_unlock(&fb_mutex);
-        config_free(&cfg);
-        return false;
+        goto cleanup;
     }
 
     fb_width  = (int)vinfo.xres;
@@ -583,11 +575,7 @@ static bool fb_render(const notification *notif,
 
     if (vinfo.bits_per_pixel != 32) {
         log_error("engine_fb: unsupported bpp=%d (need 32)", vinfo.bits_per_pixel);
-        close(fb_fd);
-        fb_fd = -1;
-        pthread_mutex_unlock(&fb_mutex);
-        config_free(&cfg);
-        return false;
+        goto cleanup;
     }
 
     // mmap the framebuffer
@@ -596,11 +584,7 @@ static bool fb_render(const notification *notif,
     if (fb_map == MAP_FAILED) {
         log_error("engine_fb: mmap failed: %s", strerror(errno));
         fb_map = NULL;
-        close(fb_fd);
-        fb_fd = -1;
-        pthread_mutex_unlock(&fb_mutex);
-        config_free(&cfg);
-        return false;
+        goto cleanup;
     }
 
     // Compute geometry first (needed for save_region), then save, then draw
@@ -628,10 +612,7 @@ static bool fb_render(const notification *notif,
 
         if (!fb_verify_visible()) {
             log_error("engine_fb: verification failed at +50ms, giving up");
-            fb_cleanup_unlocked();
-            pthread_mutex_unlock(&fb_mutex);
-            config_free(&cfg);
-            return false;
+            goto cleanup;
         }
     }
 
@@ -640,10 +621,7 @@ static bool fb_render(const notification *notif,
     // Prepare defense thread state
     if (notification_copy(&defense_notif, notif) < 0) {
         log_error("engine_fb: notification_copy failed for defense copy");
-        fb_cleanup_unlocked();
-        pthread_mutex_unlock(&fb_mutex);
-        config_free(&cfg);
-        return false;
+        goto cleanup;
     }
     defense_timeout_ms = notif->timeout_ms > 0 ? notif->timeout_ms : cfg.default_timeout;
     defense_start_mono = monotonic_ms();
@@ -674,9 +652,15 @@ static bool fb_render(const notification *notif,
         // Continue anyway — toast is displayed, just no defense
     }
 
+    result = true;
+
+cleanup:
+    if (!result) {
+        fb_cleanup_unlocked();
+    }
     pthread_mutex_unlock(&fb_mutex);
     config_free(&cfg);
-    return true;
+    return result;
 }
 
 // -------------------------------------------------------------------
