@@ -261,16 +261,8 @@ static void handle_dry_run(int client_fd, notification *notif,
     #undef CLAMP_POS
 
     // Write response back to client
-    ssize_t total_written = 0;
-    while (total_written < pos) {
-        ssize_t n = write(client_fd, response + total_written,
-                          (size_t)(pos - total_written));
-        if (n < 0) {
-            if (errno == EINTR) continue;
-            log_error("dry-run write: %s", strerror(errno));
-            break;
-        }
-        total_written += n;
+    if (write_all(client_fd, response, (size_t)pos) < 0) {
+        log_error("dry-run write: %s", strerror(errno));
     }
 
     log_info("dry-run response sent (%d bytes)", pos);

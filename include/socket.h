@@ -3,6 +3,8 @@
 
 #include "lnotify.h"
 #include <stdbool.h>
+#include <stdint.h>
+#include <sys/types.h>
 
 // Create AF_UNIX socket, bind, listen. Returns socket fd, or -1 on error.
 // Removes stale socket file if it exists.
@@ -22,5 +24,8 @@ int socket_handle_client(int client_fd, notification *out,
 // Otherwise: "$XDG_RUNTIME_DIR/lnotify.sock" (fallback "/tmp/lnotify.sock").
 // Returns pointer to static buffer — not thread-safe, do not free.
 const char *socket_default_path(bool system_mode);
+
+// Write all bytes to fd, retrying on EINTR. Returns len on success, -1 on error.
+ssize_t write_all(int fd, const void *buf, size_t len);
 
 #endif
