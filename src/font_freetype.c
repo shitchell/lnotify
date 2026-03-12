@@ -15,7 +15,10 @@ static FT_Face    ft_face;
 static int freetype_text_width(const char *text, int pixel_size) {
     if (!text || !*text) return 0;
 
-    FT_Set_Pixel_Sizes(ft_face, 0, (FT_UInt)pixel_size);
+    if (FT_Set_Pixel_Sizes(ft_face, 0, (FT_UInt)pixel_size) != 0) {
+        log_error("freetype: FT_Set_Pixel_Sizes failed for size %d", pixel_size);
+        return 0;
+    }
 
     int width = 0;
     for (const char *p = text; *p; p++) {
@@ -31,7 +34,10 @@ static void freetype_draw_text(uint8_t *fb, int fb_w, int fb_h, int stride,
                                 const lnotify_color *color) {
     if (!text || !*text) return;
 
-    FT_Set_Pixel_Sizes(ft_face, 0, (FT_UInt)pixel_size);
+    if (FT_Set_Pixel_Sizes(ft_face, 0, (FT_UInt)pixel_size) != 0) {
+        log_error("freetype: FT_Set_Pixel_Sizes failed for size %d", pixel_size);
+        return;
+    }
 
     uint8_t bgra[4];
     color_to_bgra(color, bgra);
