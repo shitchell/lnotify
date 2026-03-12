@@ -576,9 +576,11 @@ int main(int argc, char *argv[]) {
                     }
                 }
 
-                close(client_fd);
                 notification_free(&notif);
             }
+
+            // Always close — caller owns the fd
+            close(client_fd);
         }
     }
 

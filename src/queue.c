@@ -38,16 +38,52 @@ static notif_node *node_from_notif(const notification *n) {
 // Replace an existing node's notification fields with a new notification's
 // values (deep-copies strings, frees old ones).
 static void node_replace(notif_node *node, const notification *n) {
-    // Free old strings
-    free(node->notif.title);
-    free(node->notif.body);
-    free(node->notif.app);
+    // Strdup-then-swap: only replace if strdup succeeds (or new value is NULL)
+    // Title
+    if (n->title) {
+        char *dup = strdup(n->title);
+        if (dup) {
+            free(node->notif.title);
+            node->notif.title = dup;
+        } else {
+            log_error("node_replace: strdup(title) failed, keeping old value");
+        }
+    } else {
+        free(node->notif.title);
+        node->notif.title = NULL;
+    }
+
+    // Body
+    if (n->body) {
+        char *dup = strdup(n->body);
+        if (dup) {
+            free(node->notif.body);
+            node->notif.body = dup;
+        } else {
+            log_error("node_replace: strdup(body) failed, keeping old value");
+        }
+    } else {
+        free(node->notif.body);
+        node->notif.body = NULL;
+    }
+
+    // App
+    if (n->app) {
+        char *dup = strdup(n->app);
+        if (dup) {
+            free(node->notif.app);
+            node->notif.app = dup;
+        } else {
+            log_error("node_replace: strdup(app) failed, keeping old value");
+        }
+    } else {
+        free(node->notif.app);
+        node->notif.app = NULL;
+    }
+
     // Keep group_id — it already matches
 
     node->notif.id          = n->id;
-    node->notif.title       = n->title ? strdup(n->title) : NULL;
-    node->notif.body        = n->body  ? strdup(n->body)  : NULL;
-    node->notif.app         = n->app   ? strdup(n->app)   : NULL;
     node->notif.priority    = n->priority;
     node->notif.timeout_ms  = n->timeout_ms;
     node->notif.origin_uid  = n->origin_uid;

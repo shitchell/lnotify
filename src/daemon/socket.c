@@ -96,25 +96,21 @@ int socket_handle_client(int client_fd, notification *out,
             if (errno == EINTR) continue;
             if (errno == EAGAIN || errno == EWOULDBLOCK) {
                 log_error("client read timed out");
-                close(client_fd);
                 return -1;
             }
             log_error("read from client: %s", strerror(errno));
-            close(client_fd);
             return -1;
         }
         if (n == 0) break;  // client closed/shutdown write end
         total += n;
         if (total >= MAX_MSG_SIZE) {
             log_error("client message too large (>%d bytes)", MAX_MSG_SIZE);
-            close(client_fd);
             return -1;
         }
     }
 
     if (total == 0) {
         log_debug("client sent empty message");
-        close(client_fd);
         return -1;
     }
 
@@ -127,7 +123,6 @@ int socket_handle_client(int client_fd, notification *out,
     ssize_t consumed = protocol_deserialize(buf, (size_t)total, out);
     if (consumed < 0) {
         log_error("protocol_deserialize failed");
-        close(client_fd);
         return -1;
     }
 
@@ -156,8 +151,8 @@ int socket_handle_client(int client_fd, notification *out,
              out->group_id ? out->group_id : "(none)",
              out->origin_uid);
 
-    // Caller is responsible for closing client_fd on success
-    // (needed for dry-run to write response back before closing)
+    // Caller is responsible for closing client_fd in all cases
+    // (keeps fd ownership symmetric — caller opens, caller closes)
     return 0;
 }
 
