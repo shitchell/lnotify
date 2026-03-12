@@ -27,6 +27,51 @@ void logind_close(void) {
     }
 }
 
+/**
+ * Query a string property from a logind session object.
+ * Returns a heap-allocated string on success, or strdup("unknown") on failure.
+ * May return NULL on OOM; callers handle NULL.
+ */
+static char *logind_get_session_str(sd_bus *bus, const char *obj,
+                                     const char *prop) {
+    sd_bus_error err = SD_BUS_ERROR_NULL;
+    char *val = NULL;
+    int r = sd_bus_get_property_string(bus, "org.freedesktop.login1", obj,
+                "org.freedesktop.login1.Session", prop, &err, &val);
+    sd_bus_error_free(&err);
+    if (r < 0 || !val) {
+        char *fallback = strdup("unknown");
+        return fallback;  // may be NULL on OOM, callers handle NULL
+    }
+    return val;
+}
+
+/**
+ * Query a uint32 property from a logind session object.
+ * Returns 0 on success, negative errno on failure.
+ */
+static int logind_get_session_uint(sd_bus *bus, const char *obj,
+                                    const char *prop, uint32_t *out) {
+    sd_bus_error err = SD_BUS_ERROR_NULL;
+    int r = sd_bus_get_property_trivial(bus, "org.freedesktop.login1", obj,
+                "org.freedesktop.login1.Session", prop, &err, 'u', out);
+    sd_bus_error_free(&err);
+    return r;
+}
+
+/**
+ * Query a boolean property from a logind session object.
+ * Returns 0 on success, negative errno on failure.
+ */
+static int logind_get_session_bool(sd_bus *bus, const char *obj,
+                                    const char *prop, int *out) {
+    sd_bus_error err = SD_BUS_ERROR_NULL;
+    int r = sd_bus_get_property_trivial(bus, "org.freedesktop.login1", obj,
+                "org.freedesktop.login1.Session", prop, &err, 'b', out);
+    sd_bus_error_free(&err);
+    return r;
+}
+
 void logind_session_free(logind_session *s) {
     if (!s) return;
     free(s->session_id);    s->session_id = NULL;
@@ -74,13 +119,8 @@ int logind_get_session_by_vt(uint32_t vt, logind_session *out) {
         }
 
         // Query VTNr for this session
-        sd_bus_error prop_error = SD_BUS_ERROR_NULL;
         uint32_t vt_nr = 0;
-        r = sd_bus_get_property_trivial(bus,
-            "org.freedesktop.login1", obj,
-            "org.freedesktop.login1.Session", "VTNr",
-            &prop_error, 'u', &vt_nr);
-        sd_bus_error_free(&prop_error);
+        r = logind_get_session_uint(bus, obj, "VTNr", &vt_nr);
 
         if (r < 0 || vt_nr != vt) {
             sd_bus_message_exit_container(reply);
@@ -103,47 +143,15 @@ int logind_get_session_by_vt(uint32_t vt, logind_session *out) {
             goto finish;
         }
 
-        // Query Type
-        sd_bus_error type_error = SD_BUS_ERROR_NULL;
-        r = sd_bus_get_property_string(bus,
-            "org.freedesktop.login1", obj,
-            "org.freedesktop.login1.Session", "Type",
-            &type_error, &out->type);
-        sd_bus_error_free(&type_error);
-        if (r < 0) {
-            out->type = strdup("unknown");
-            if (!out->type) out->type = NULL;
-        }
+        // Query Type, Class, Remote, Leader
+        out->type = logind_get_session_str(bus, obj, "Type");
+        out->session_class = logind_get_session_str(bus, obj, "Class");
 
-        // Query Class
-        sd_bus_error class_error = SD_BUS_ERROR_NULL;
-        r = sd_bus_get_property_string(bus,
-            "org.freedesktop.login1", obj,
-            "org.freedesktop.login1.Session", "Class",
-            &class_error, &out->session_class);
-        sd_bus_error_free(&class_error);
-        if (r < 0) {
-            out->session_class = strdup("unknown");
-            if (!out->session_class) out->session_class = NULL;
-        }
-
-        // Query Remote
-        sd_bus_error remote_error = SD_BUS_ERROR_NULL;
         int remote_val = 0;
-        r = sd_bus_get_property_trivial(bus,
-            "org.freedesktop.login1", obj,
-            "org.freedesktop.login1.Session", "Remote",
-            &remote_error, 'b', &remote_val);
-        sd_bus_error_free(&remote_error);
+        r = logind_get_session_bool(bus, obj, "Remote", &remote_val);
         out->remote = (r >= 0) ? (bool)remote_val : false;
 
-        // Query Leader
-        sd_bus_error leader_error = SD_BUS_ERROR_NULL;
-        r = sd_bus_get_property_trivial(bus,
-            "org.freedesktop.login1", obj,
-            "org.freedesktop.login1.Session", "Leader",
-            &leader_error, 'u', &out->leader_pid);
-        sd_bus_error_free(&leader_error);
+        logind_get_session_uint(bus, obj, "Leader", &out->leader_pid);
 
         ret = 0;
         sd_bus_message_exit_container(reply);
@@ -197,13 +205,8 @@ int logind_list_remote_sessions(logind_session *out, int max) {
         }
 
         // Query Remote — skip non-remote sessions
-        sd_bus_error remote_error = SD_BUS_ERROR_NULL;
         int remote_val = 0;
-        r = sd_bus_get_property_trivial(bus,
-            "org.freedesktop.login1", obj,
-            "org.freedesktop.login1.Session", "Remote",
-            &remote_error, 'b', &remote_val);
-        sd_bus_error_free(&remote_error);
+        r = logind_get_session_bool(bus, obj, "Remote", &remote_val);
 
         if (r < 0 || !remote_val) {
             sd_bus_message_exit_container(reply);
@@ -226,44 +229,16 @@ int logind_list_remote_sessions(logind_session *out, int max) {
             continue;
         }
 
-        // Query Type
-        sd_bus_error type_error = SD_BUS_ERROR_NULL;
-        r = sd_bus_get_property_string(bus,
-            "org.freedesktop.login1", obj,
-            "org.freedesktop.login1.Session", "Type",
-            &type_error, &s->type);
-        sd_bus_error_free(&type_error);
-        if (r < 0) {
-            s->type = strdup("unknown");
-            if (!s->type) s->type = NULL;
-        }
+        // Query Type, Class, Leader
+        s->type = logind_get_session_str(bus, obj, "Type");
+        s->session_class = logind_get_session_str(bus, obj, "Class");
+        logind_get_session_uint(bus, obj, "Leader", &s->leader_pid);
 
-        // Query Class
-        sd_bus_error class_error = SD_BUS_ERROR_NULL;
-        r = sd_bus_get_property_string(bus,
-            "org.freedesktop.login1", obj,
-            "org.freedesktop.login1.Session", "Class",
-            &class_error, &s->session_class);
-        sd_bus_error_free(&class_error);
-        if (r < 0) {
-            s->session_class = strdup("unknown");
-            if (!s->session_class) s->session_class = NULL;
-        }
-
-        // Query Leader
-        sd_bus_error leader_error = SD_BUS_ERROR_NULL;
-        r = sd_bus_get_property_trivial(bus,
-            "org.freedesktop.login1", obj,
-            "org.freedesktop.login1.Session", "Leader",
-            &leader_error, 'u', &s->leader_pid);
-        sd_bus_error_free(&leader_error);
-
-        // Query TTY
+        // Query TTY (NULL on failure, not "unknown" — ssh_delivery needs this)
         sd_bus_error tty_error = SD_BUS_ERROR_NULL;
-        r = sd_bus_get_property_string(bus,
-            "org.freedesktop.login1", obj,
-            "org.freedesktop.login1.Session", "TTY",
-            &tty_error, &s->tty);
+        r = sd_bus_get_property_string(bus, "org.freedesktop.login1", obj,
+                "org.freedesktop.login1.Session", "TTY",
+                &tty_error, &s->tty);
         sd_bus_error_free(&tty_error);
         if (r < 0) s->tty = NULL;
 
