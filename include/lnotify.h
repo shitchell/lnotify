@@ -30,6 +30,9 @@ uint64_t wallclock_ms(void);
 // Returns 0 on success, -1 on allocation failure.
 int notification_init(notification *n, const char *title, const char *body);
 
+// Deep-copy a notification. Returns 0 on success, -1 on failure.
+int notification_copy(notification *dst, const notification *src);
+
 // Free owned strings in a notification.
 void notification_free(notification *n);
 
