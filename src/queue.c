@@ -1,5 +1,6 @@
 #include "queue.h"
 #include "log.h"
+#include "strutil.h"
 #include <string.h>
 
 // Global notification queue instance
@@ -10,76 +11,23 @@ static notif_node *node_from_notif(const notification *n) {
     notif_node *node = calloc(1, sizeof(*node));
     if (!node) return NULL;
 
-    node->notif.id          = n->id;
-    node->notif.title       = n->title    ? strdup(n->title)    : NULL;
-    node->notif.body        = n->body     ? strdup(n->body)     : NULL;
-    node->notif.app         = n->app      ? strdup(n->app)      : NULL;
-    node->notif.group_id    = n->group_id ? strdup(n->group_id) : NULL;
-    node->notif.priority    = n->priority;
-    node->notif.timeout_ms  = n->timeout_ms;
-    node->notif.origin_uid  = n->origin_uid;
-    node->notif.ts_sent     = n->ts_sent;
-    node->notif.ts_received = n->ts_received;
-    node->notif.ts_mono     = n->ts_mono;
-    node->next = NULL;
-
-    // Check for strdup failures on non-NULL inputs
-    if ((n->title && !node->notif.title) ||
-        (n->body  && !node->notif.body)  ||
-        (n->app   && !node->notif.app)   ||
-        (n->group_id && !node->notif.group_id)) {
-        notification_free(&node->notif);
+    if (notification_copy(&node->notif, n) < 0) {
         free(node);
         return NULL;
     }
+    node->next = NULL;
     return node;
 }
 
 // Replace an existing node's notification fields with a new notification's
 // values (deep-copies strings, frees old ones).
 static void node_replace(notif_node *node, const notification *n) {
-    // Strdup-then-swap: only replace if strdup succeeds (or new value is NULL)
-    // Title
-    if (n->title) {
-        char *dup = strdup(n->title);
-        if (dup) {
-            free(node->notif.title);
-            node->notif.title = dup;
-        } else {
-            log_error("node_replace: strdup(title) failed, keeping old value");
-        }
-    } else {
-        free(node->notif.title);
-        node->notif.title = NULL;
-    }
-
-    // Body
-    if (n->body) {
-        char *dup = strdup(n->body);
-        if (dup) {
-            free(node->notif.body);
-            node->notif.body = dup;
-        } else {
-            log_error("node_replace: strdup(body) failed, keeping old value");
-        }
-    } else {
-        free(node->notif.body);
-        node->notif.body = NULL;
-    }
-
-    // App
-    if (n->app) {
-        char *dup = strdup(n->app);
-        if (dup) {
-            free(node->notif.app);
-            node->notif.app = dup;
-        } else {
-            log_error("node_replace: strdup(app) failed, keeping old value");
-        }
-    } else {
-        free(node->notif.app);
-        node->notif.app = NULL;
-    }
+    if (replace_str(&node->notif.title, n->title) < 0)
+        log_error("node_replace: replace_str failed for title");
+    if (replace_str(&node->notif.body, n->body) < 0)
+        log_error("node_replace: replace_str failed for body");
+    if (replace_str(&node->notif.app, n->app) < 0)
+        log_error("node_replace: replace_str failed for app");
 
     // Keep group_id — it already matches
 

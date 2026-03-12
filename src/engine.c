@@ -2,6 +2,7 @@
 #include "engine_dbus.h"
 #include "log.h"
 #include "logind.h"
+#include "strutil.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -39,25 +40,15 @@ void context_init_from_logind(session_context *ctx, uint32_t vt) {
 
     log_debug("context_init_from_logind: VT %u -> session %s", vt, session.session_id);
 
-    // Transfer fields (replace defaults). Use set_str pattern: only replace
-    // if strdup succeeds, so OOM doesn't destroy existing value.
-    char *tmp;
-
-    tmp = strdup(session.type ? session.type : "");
-    if (tmp) { free(ctx->session_type); ctx->session_type = tmp; }
-    else { log_error("context_init_from_logind: strdup failed for session_type"); }
-
-    tmp = strdup(session.session_class ? session.session_class : "");
-    if (tmp) { free(ctx->session_class); ctx->session_class = tmp; }
-    else { log_error("context_init_from_logind: strdup failed for session_class"); }
-
-    tmp = strdup(session.username ? session.username : "");
-    if (tmp) { free(ctx->username); ctx->username = tmp; }
-    else { log_error("context_init_from_logind: strdup failed for username"); }
-
-    tmp = strdup(session.seat ? session.seat : "");
-    if (tmp) { free(ctx->seat); ctx->seat = tmp; }
-    else { log_error("context_init_from_logind: strdup failed for seat"); }
+    // Transfer fields (replace defaults). replace_str preserves old value on OOM.
+    if (replace_str(&ctx->session_type, session.type ? session.type : "") < 0)
+        log_error("context_init_from_logind: replace_str failed for session_type");
+    if (replace_str(&ctx->session_class, session.session_class ? session.session_class : "") < 0)
+        log_error("context_init_from_logind: replace_str failed for session_class");
+    if (replace_str(&ctx->username, session.username ? session.username : "") < 0)
+        log_error("context_init_from_logind: replace_str failed for username");
+    if (replace_str(&ctx->seat, session.seat ? session.seat : "") < 0)
+        log_error("context_init_from_logind: replace_str failed for seat");
 
     ctx->uid = session.uid;
     ctx->remote = session.remote;
