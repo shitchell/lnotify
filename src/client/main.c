@@ -101,6 +101,10 @@ int main(int argc, char *argv[]) {
                 fprintf(stderr, "error: invalid timeout '%s' (must be a non-negative integer)\n", optarg);
                 return 1;
             }
+            if (val > INT32_MAX) {
+                fprintf(stderr, "error: timeout value out of range\n");
+                return 1;
+            }
             timeout_ms = (int32_t)val;
             break;
         }
@@ -148,8 +152,22 @@ int main(int argc, char *argv[]) {
     }
     notif.priority = priority;
     notif.timeout_ms = timeout_ms;
-    notif.app = app ? strdup(app) : NULL;
-    notif.group_id = group_id ? strdup(group_id) : NULL;
+    if (app) {
+        notif.app = strdup(app);
+        if (!notif.app) {
+            fprintf(stderr, "error: strdup failed\n");
+            notification_free(&notif);
+            return 1;
+        }
+    }
+    if (group_id) {
+        notif.group_id = strdup(group_id);
+        if (!notif.group_id) {
+            fprintf(stderr, "error: strdup failed\n");
+            notification_free(&notif);
+            return 1;
+        }
+    }
 
     // Serialize
     uint8_t buf[MAX_MSG_SIZE];
@@ -247,7 +265,9 @@ int main(int argc, char *argv[]) {
     if (dry_run) {
         // Signal end of request so daemon reads EOF, but keep socket open
         // for reading the response
-        shutdown(fd, SHUT_WR);
+        if (shutdown(fd, SHUT_WR) < 0) {
+            log_error("shutdown: %s", strerror(errno));
+        }
 
         // Read and print the daemon's diagnostic response
         char rbuf[4096];
