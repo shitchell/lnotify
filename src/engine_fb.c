@@ -479,8 +479,7 @@ static void *defense_thread_fn(void *arg) {
                 log_info("engine_fb: 3 consecutive defense failures, "
                          "pushing to queue");
                 notification copy;
-                if (notification_init(&copy, defense_notif.title,
-                                      defense_notif.body) < 0) {
+                if (notification_copy(&copy, &defense_notif) < 0) {
                     log_error("engine_fb: failed to copy notification "
                               "for queue");
                     fb_cleanup_unlocked();
@@ -488,9 +487,6 @@ static void *defense_thread_fn(void *arg) {
                     pthread_mutex_unlock(&fb_mutex);
                     return NULL;
                 }
-                copy.priority   = defense_notif.priority;
-                copy.timeout_ms = defense_notif.timeout_ms;
-                copy.ts_mono    = defense_notif.ts_mono;
 
                 fb_cleanup_unlocked();
                 defense_running = false;
@@ -642,16 +638,13 @@ static bool fb_render(const notification *notif,
     log_debug("engine_fb: toast verified visible");
 
     // Prepare defense thread state
-    if (notification_init(&defense_notif, notif->title, notif->body) < 0) {
-        log_error("engine_fb: notification_init failed for defense copy");
+    if (notification_copy(&defense_notif, notif) < 0) {
+        log_error("engine_fb: notification_copy failed for defense copy");
         fb_cleanup_unlocked();
         pthread_mutex_unlock(&fb_mutex);
         config_free(&cfg);
         return false;
     }
-    defense_notif.priority   = notif->priority;
-    defense_notif.timeout_ms = notif->timeout_ms;
-    defense_notif.ts_mono    = notif->ts_mono;
     defense_timeout_ms = notif->timeout_ms > 0 ? notif->timeout_ms : cfg.default_timeout;
     defense_start_mono = monotonic_ms();
     defense_stop = false;
