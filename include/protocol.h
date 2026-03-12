@@ -18,6 +18,9 @@
 //   total_len(4) + field_mask(2) + priority(1) + timeout_ms(4) + ts_sent(8)
 #define PROTOCOL_HEADER_SIZE 19
 
+// Maximum wire-message size (64 KiB)
+#define MAX_MSG_SIZE 65536
+
 // Extract the raw field_mask from a serialized buffer without full deserialization.
 // Returns the field_mask, or 0 if the buffer is too small.
 static inline uint16_t protocol_peek_field_mask(const uint8_t *buf, size_t buflen) {

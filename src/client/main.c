@@ -12,8 +12,6 @@
 #include <sys/un.h>
 #include <unistd.h>
 
-#define MAX_MSG_SIZE 65536
-
 static void print_usage(const char *progname) {
     fprintf(stderr,
         "Usage: %s [OPTIONS] BODY\n"
@@ -239,17 +237,11 @@ int main(int argc, char *argv[]) {
     (void)connected_path;
 
     // Write serialized data
-    ssize_t total_written = 0;
-    while (total_written < msg_len) {
-        ssize_t n = write(fd, buf + total_written, (size_t)(msg_len - total_written));
-        if (n < 0) {
-            if (errno == EINTR) continue;
-            fprintf(stderr, "error: write(): %s\n", strerror(errno));
-            close(fd);
-            notification_free(&notif);
-            return 1;
-        }
-        total_written += n;
+    if (write_all(fd, buf, (size_t)msg_len) < 0) {
+        fprintf(stderr, "error: write(): %s\n", strerror(errno));
+        close(fd);
+        notification_free(&notif);
+        return 1;
     }
 
     if (dry_run) {
