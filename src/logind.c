@@ -95,6 +95,14 @@ int logind_get_session_by_vt(uint32_t vt, logind_session *out) {
         out->seat = strdup(seat);
         out->vt = vt_nr;
 
+        if (!out->session_id || !out->username || !out->seat) {
+            log_error("logind: strdup failed populating session");
+            logind_session_free(out);
+            sd_bus_message_exit_container(reply);
+            ret = -1;
+            goto finish;
+        }
+
         // Query Type
         sd_bus_error type_error = SD_BUS_ERROR_NULL;
         r = sd_bus_get_property_string(bus,
@@ -102,7 +110,10 @@ int logind_get_session_by_vt(uint32_t vt, logind_session *out) {
             "org.freedesktop.login1.Session", "Type",
             &type_error, &out->type);
         sd_bus_error_free(&type_error);
-        if (r < 0) out->type = strdup("unknown");
+        if (r < 0) {
+            out->type = strdup("unknown");
+            if (!out->type) out->type = NULL;
+        }
 
         // Query Class
         sd_bus_error class_error = SD_BUS_ERROR_NULL;
@@ -111,7 +122,10 @@ int logind_get_session_by_vt(uint32_t vt, logind_session *out) {
             "org.freedesktop.login1.Session", "Class",
             &class_error, &out->session_class);
         sd_bus_error_free(&class_error);
-        if (r < 0) out->session_class = strdup("unknown");
+        if (r < 0) {
+            out->session_class = strdup("unknown");
+            if (!out->session_class) out->session_class = NULL;
+        }
 
         // Query Remote
         sd_bus_error remote_error = SD_BUS_ERROR_NULL;
@@ -205,6 +219,13 @@ int logind_list_remote_sessions(logind_session *out, int max) {
         s->seat = strdup(seat);
         s->remote = true;
 
+        if (!s->session_id || !s->username || !s->seat) {
+            log_error("logind: strdup failed populating remote session");
+            logind_session_free(s);
+            sd_bus_message_exit_container(reply);
+            continue;
+        }
+
         // Query Type
         sd_bus_error type_error = SD_BUS_ERROR_NULL;
         r = sd_bus_get_property_string(bus,
@@ -212,7 +233,10 @@ int logind_list_remote_sessions(logind_session *out, int max) {
             "org.freedesktop.login1.Session", "Type",
             &type_error, &s->type);
         sd_bus_error_free(&type_error);
-        if (r < 0) s->type = strdup("unknown");
+        if (r < 0) {
+            s->type = strdup("unknown");
+            if (!s->type) s->type = NULL;
+        }
 
         // Query Class
         sd_bus_error class_error = SD_BUS_ERROR_NULL;
@@ -221,7 +245,10 @@ int logind_list_remote_sessions(logind_session *out, int max) {
             "org.freedesktop.login1.Session", "Class",
             &class_error, &s->session_class);
         sd_bus_error_free(&class_error);
-        if (r < 0) s->session_class = strdup("unknown");
+        if (r < 0) {
+            s->session_class = strdup("unknown");
+            if (!s->session_class) s->session_class = NULL;
+        }
 
         // Query Leader
         sd_bus_error leader_error = SD_BUS_ERROR_NULL;
