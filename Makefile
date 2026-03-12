@@ -12,7 +12,7 @@ LDFLAGS = -lpthread $(SDBUS_LIBS) $(FREETYPE_LIBS)
 
 # Source files (add as created)
 # SHARED_SRC: needed by both client and daemon (protocol, notification, config, log)
-SHARED_SRC = src/log.c src/notification.c src/protocol.c src/config.c src/sanitize.c
+SHARED_SRC = src/log.c src/notification.c src/protocol.c src/config.c src/sanitize.c src/strutil.c
 # DAEMON_ONLY_SRC: only needed by daemon (engines, fonts, resolver, logind, queue)
 DAEMON_ONLY_SRC = src/engine.c src/resolver.c src/logind.c src/queue.c src/render_util.c src/font.c src/font_bitmap.c src/engine_fb.c src/engine_dbus.c src/engine_queue.c src/engine_terminal.c
 ifeq ($(FREETYPE),1)
@@ -20,7 +20,7 @@ ifeq ($(FREETYPE),1)
 endif
 DAEMON_SRC = src/daemon/main.c src/daemon/socket.c src/daemon/ssh_delivery.c $(SHARED_SRC) $(DAEMON_ONLY_SRC)
 CLIENT_SRC = src/client/main.c src/daemon/socket.c $(SHARED_SRC)
-TEST_SRC   = tests/test_main.c tests/test_notification.c tests/test_protocol.c tests/test_config.c tests/test_resolver.c tests/test_queue.c tests/test_render_util.c tests/test_engine_terminal.c tests/test_sanitize.c $(SHARED_SRC) $(DAEMON_ONLY_SRC)
+TEST_SRC   = tests/test_main.c tests/test_notification.c tests/test_protocol.c tests/test_config.c tests/test_resolver.c tests/test_queue.c tests/test_render_util.c tests/test_engine_terminal.c tests/test_sanitize.c tests/test_strutil.c $(SHARED_SRC) $(DAEMON_ONLY_SRC)
 
 .PHONY: all clean test daemon client
 

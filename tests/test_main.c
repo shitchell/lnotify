@@ -17,6 +17,7 @@ extern void test_queue_suite(void);
 extern void test_render_util_suite(void);
 extern void test_engine_terminal_suite(void);
 extern void test_sanitize_suite(void);
+extern void test_strutil_suite(void);
 
 // Placeholder suite to verify harness works
 static void test_harness_suite(void) {
@@ -37,6 +38,7 @@ int main(void) {
     RUN_SUITE(test_render_util_suite);
     RUN_SUITE(test_engine_terminal_suite);
     RUN_SUITE(test_sanitize_suite);
+    RUN_SUITE(test_strutil_suite);
 
     fprintf(stderr, "\n===================\n");
     fprintf(stderr, "Results: %d passed, %d failed, %d total\n",
