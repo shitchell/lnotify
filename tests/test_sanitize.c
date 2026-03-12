@@ -1,4 +1,5 @@
 #include "sanitize.h"
+#include "lnotify.h"
 #include "test_util.h"
 #include <stdlib.h>
 #include <string.h>
@@ -123,5 +124,75 @@ void test_sanitize_suite(void) {
         ASSERT_NOT_NULL(out, "tab: non-NULL");
         ASSERT_STR_EQ(out, "col1col2", "tab: stripped");
         free(out);
+    }
+
+    // ---------------------------------------------------------------
+    // sanitize_notif / sanitize_notif_free tests
+    // ---------------------------------------------------------------
+
+    // Test: both title and body are sanitized
+    {
+        notification n = {0};
+        n.title = "Hello\x1B";
+        n.body  = "World\x7F";
+        sanitized_notif sn;
+        sanitize_notif(&sn, &n);
+        ASSERT_STR_EQ(sn.t, "Hello", "sanitize_notif: title stripped");
+        ASSERT_STR_EQ(sn.b, "World", "sanitize_notif: body stripped");
+        ASSERT_EQ(sn.t, sn.title, "sanitize_notif: t aliases title");
+        ASSERT_EQ(sn.b, sn.body, "sanitize_notif: b aliases body");
+        sanitize_notif_free(&sn);
+    }
+
+    // Test: NULL title produces empty t alias
+    {
+        notification n = {0};
+        n.title = NULL;
+        n.body  = "body";
+        sanitized_notif sn;
+        sanitize_notif(&sn, &n);
+        ASSERT_NULL(sn.title, "sanitize_notif: NULL title stays NULL");
+        ASSERT_STR_EQ(sn.t, "", "sanitize_notif: t is empty for NULL title");
+        ASSERT_STR_EQ(sn.b, "body", "sanitize_notif: body preserved");
+        sanitize_notif_free(&sn);
+    }
+
+    // Test: NULL body produces empty b alias
+    {
+        notification n = {0};
+        n.title = "title";
+        n.body  = NULL;
+        sanitized_notif sn;
+        sanitize_notif(&sn, &n);
+        ASSERT_STR_EQ(sn.t, "title", "sanitize_notif: title preserved");
+        ASSERT_NULL(sn.body, "sanitize_notif: NULL body stays NULL");
+        ASSERT_STR_EQ(sn.b, "", "sanitize_notif: b is empty for NULL body");
+        sanitize_notif_free(&sn);
+    }
+
+    // Test: both NULL
+    {
+        notification n = {0};
+        n.title = NULL;
+        n.body  = NULL;
+        sanitized_notif sn;
+        sanitize_notif(&sn, &n);
+        ASSERT_NULL(sn.title, "sanitize_notif: both NULL title");
+        ASSERT_NULL(sn.body, "sanitize_notif: both NULL body");
+        ASSERT_STR_EQ(sn.t, "", "sanitize_notif: t empty when both NULL");
+        ASSERT_STR_EQ(sn.b, "", "sanitize_notif: b empty when both NULL");
+        sanitize_notif_free(&sn);
+    }
+
+    // Test: clean strings pass through unchanged
+    {
+        notification n = {0};
+        n.title = "Test Title";
+        n.body  = "Test Body";
+        sanitized_notif sn;
+        sanitize_notif(&sn, &n);
+        ASSERT_STR_EQ(sn.t, "Test Title", "sanitize_notif: clean title");
+        ASSERT_STR_EQ(sn.b, "Test Body", "sanitize_notif: clean body");
+        sanitize_notif_free(&sn);
     }
 }

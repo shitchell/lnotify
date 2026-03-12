@@ -75,15 +75,12 @@ bool terminal_render_osc(int pty_fd, const ssh_pty_info *pty,
         if (term && strstr(term, "rxvt")) {
             free(term);
             // Use OSC 777 for rxvt-unicode: \033]777;notify;TITLE;BODY\007
-            char *title = sanitize_for_terminal(notif->title);
-            char *body  = sanitize_for_terminal(notif->body);
-            const char *t = title ? title : "";
-            const char *b = body  ? body  : "";
+            sanitized_notif sn;
+            sanitize_notif(&sn, notif);
             char buf[1024];
             int n = snprintf(buf, sizeof(buf),
-                             "\033]777;notify;%s;%s\007", t, b);
-            free(title);
-            free(body);
+                             "\033]777;notify;%s;%s\007", sn.t, sn.b);
+            sanitize_notif_free(&sn);
             if (n > 0 && n < (int)sizeof(buf)) {
                 ssize_t w = write(pty_fd, buf, (size_t)n);
                 if (w == n) {
@@ -116,21 +113,18 @@ bool terminal_render_osc(int pty_fd, const ssh_pty_info *pty,
 
     // OSC 9: \033]9;BODY\007 (iTerm style, title not supported in OSC 9)
     // Some terminals also accept \033]9;TITLE\nBODY\007
-    char *title = sanitize_for_terminal(notif->title);
-    char *body  = sanitize_for_terminal(notif->body);
-    const char *t = title ? title : "";
-    const char *b = body  ? body  : "";
+    sanitized_notif sn;
+    sanitize_notif(&sn, notif);
     char buf[1024];
     int n;
 
-    if (t[0] != '\0') {
-        n = snprintf(buf, sizeof(buf), "\033]9;%s: %s\007", t, b);
+    if (sn.t[0] != '\0') {
+        n = snprintf(buf, sizeof(buf), "\033]9;%s: %s\007", sn.t, sn.b);
     } else {
-        n = snprintf(buf, sizeof(buf), "\033]9;%s\007", b);
+        n = snprintf(buf, sizeof(buf), "\033]9;%s\007", sn.b);
     }
 
-    free(title);
-    free(body);
+    sanitize_notif_free(&sn);
 
     if (n > 0 && n < (int)sizeof(buf)) {
         ssize_t w = write(pty_fd, buf, (size_t)n);
@@ -204,10 +198,8 @@ bool terminal_render_tmux(const ssh_pty_info *pty,
     }
     free(tmux_env);
 
-    char *title = sanitize_for_terminal(notif->title);
-    char *body  = sanitize_for_terminal(notif->body);
-    const char *t = title ? title : "";
-    const char *b = body  ? body  : "";
+    sanitized_notif sn;
+    sanitize_notif(&sn, notif);
 
     int duration_secs = (timeout_ms > 0 ? timeout_ms : 5000) / 1000;
     if (duration_secs < 1) duration_secs = 1;
@@ -219,7 +211,7 @@ bool terminal_render_tmux(const ssh_pty_info *pty,
     {
         char msg[512];
         snprintf(msg, sizeof(msg), "[lnotify] %s%s%s",
-                 t, (t[0] && b[0]) ? ": " : "", b);
+                 sn.t, (sn.t[0] && sn.b[0]) ? ": " : "", sn.b);
 
         char duration_str[16];
         snprintf(duration_str, sizeof(duration_str), "%d", duration_secs * 1000);
@@ -231,14 +223,12 @@ bool terminal_render_tmux(const ssh_pty_info *pty,
         int rc = run_tmux(msg_argv);
         if (rc == 0) {
             log_info("ssh: tmux display-message sent via %s", tmux_socket);
-            free(title);
-            free(body);
+            sanitize_notif_free(&sn);
             return true;
         }
     }
 
-    free(title);
-    free(body);
+    sanitize_notif_free(&sn);
     log_debug("ssh: tmux delivery failed for %s", pty->pty_path);
     return false;
 }
@@ -255,22 +245,23 @@ bool terminal_render_overlay(int pty_fd, const notification *notif,
         return false;
     }
 
-    char *title = sanitize_for_terminal(notif->title);
-    char *body  = sanitize_for_terminal(notif->body);
-    const char *t = title ? title : "";
-    const char *b = body  ? body  : "";
+    sanitized_notif sn;
+    sanitize_notif(&sn, notif);
 
     // Build the notification text
     char line1[128], line2[128];
     int line1_len = 0, line2_len = 0;
 
-    if (t[0] != '\0') {
-        line1_len = snprintf(line1, sizeof(line1), " %s ", t);
-        line2_len = snprintf(line2, sizeof(line2), " %s ", b);
+    if (sn.t[0] != '\0') {
+        line1_len = snprintf(line1, sizeof(line1), " %s ", sn.t);
+        line2_len = snprintf(line2, sizeof(line2), " %s ", sn.b);
     } else {
-        line1_len = snprintf(line1, sizeof(line1), " %s ", b);
+        line1_len = snprintf(line1, sizeof(line1), " %s ", sn.b);
         line2_len = 0;
     }
+
+    // Sanitized strings no longer needed (content copied into line1/line2)
+    sanitize_notif_free(&sn);
 
     // Determine box width (min width for content, max width limited by cols)
     int content_width = line1_len;
@@ -322,10 +313,6 @@ bool terminal_render_overlay(int pty_fd, const notification *notif,
 
     // Restore cursor position
     n += snprintf(buf + n, sizeof(buf) - (size_t)n, "\033[u");
-
-    // Sanitized strings no longer needed (content copied into line1/line2)
-    free(title);
-    free(body);
 
     if (n >= (int)sizeof(buf)) {
         log_error("ssh: overlay buffer overflow");
@@ -418,26 +405,23 @@ bool terminal_render_overlay(int pty_fd, const notification *notif,
 // ---------------------------------------------------------------------------
 
 bool terminal_render_text(int pty_fd, const notification *notif) {
-    char *title = sanitize_for_terminal(notif->title);
-    char *body  = sanitize_for_terminal(notif->body);
-    const char *t = title ? title : "";
-    const char *b = body  ? body  : "";
+    sanitized_notif sn;
+    sanitize_notif(&sn, notif);
 
     char buf[1024];
     int n;
 
-    if (t[0] != '\0') {
+    if (sn.t[0] != '\0') {
         n = snprintf(buf, sizeof(buf),
                      "\r\n\033[1;44;37m lnotify \033[0m %s: %s\r\n",
-                     t, b);
+                     sn.t, sn.b);
     } else {
         n = snprintf(buf, sizeof(buf),
                      "\r\n\033[1;44;37m lnotify \033[0m %s\r\n",
-                     b);
+                     sn.b);
     }
 
-    free(title);
-    free(body);
+    sanitize_notif_free(&sn);
 
     if (n <= 0 || n >= (int)sizeof(buf)) {
         return false;

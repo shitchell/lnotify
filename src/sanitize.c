@@ -26,3 +26,15 @@ char *sanitize_for_terminal(const char *input) {
     out[j] = '\0';
     return out;
 }
+
+void sanitize_notif(sanitized_notif *s, const notification *n) {
+    s->title = sanitize_for_terminal(n->title);
+    s->body  = sanitize_for_terminal(n->body);
+    s->t     = s->title ? s->title : "";
+    s->b     = s->body  ? s->body  : "";
+}
+
+void sanitize_notif_free(sanitized_notif *s) {
+    free(s->title);
+    free(s->body);
+}
