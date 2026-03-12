@@ -107,8 +107,12 @@ static uint32_t read_vt_number(int sysfs_fd) {
     if (strncmp(p, "tty", 3) == 0)
         p += 3;
 
-    uint32_t vt = (uint32_t)atoi(p);
-    return vt;
+    char *endp;
+    errno = 0;
+    unsigned long vt = strtoul(p, &endp, 10);
+    if (endp == p || errno == ERANGE || vt > UINT32_MAX)
+        return 0;
+    return (uint32_t)vt;
 }
 
 // ---------------------------------------------------------------------------

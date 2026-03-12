@@ -2,6 +2,8 @@
 #include "log.h"
 
 #include <ctype.h>
+#include <errno.h>
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -27,6 +29,18 @@ static void set_str(char **field, const char *value) {
     if (!copy) return;  // OOM: keep existing value
     free(*field);
     *field = copy;
+}
+
+// Parse an integer from a string, returning fallback on any error (overflow,
+// non-numeric, empty). Uses strtol for defined behavior on all inputs.
+static int safe_atoi(const char *str, int fallback) {
+    char *endp;
+    errno = 0;
+    long val = strtol(str, &endp, 10);
+    if (endp == str || *endp != '\0' || errno == ERANGE
+        || val < INT_MIN || val > INT_MAX)
+        return fallback;
+    return (int)val;
 }
 
 // Clamp an integer to [lo, hi].
@@ -130,7 +144,7 @@ int config_defaults(lnotify_config *cfg) {
 static void config_set(lnotify_config *cfg, const char *key, const char *value) {
     // Display
     if (strcmp(key, "default_timeout") == 0) {
-        cfg->default_timeout = clamp_int(atoi(value), 100, 300000);
+        cfg->default_timeout = clamp_int(safe_atoi(value, 5000), 100, 300000);
     } else if (strcmp(key, "position") == 0) {
         set_str(&cfg->position, value);
     } else if (strcmp(key, "font_name") == 0) {
@@ -138,7 +152,7 @@ static void config_set(lnotify_config *cfg, const char *key, const char *value) 
     } else if (strcmp(key, "font_path") == 0) {
         set_str(&cfg->font_path, value);
     } else if (strcmp(key, "font_size") == 0) {
-        cfg->font_size = clamp_int(atoi(value), 8, 200);
+        cfg->font_size = clamp_int(safe_atoi(value, 16), 8, 200);
     }
     // Toast style
     else if (strcmp(key, "bg_color") == 0) {
@@ -151,13 +165,13 @@ static void config_set(lnotify_config *cfg, const char *key, const char *value) 
         if (config_parse_color(value, &cfg->border_color) != 0)
             log_debug("config: invalid color for border_color: %s", value);
     } else if (strcmp(key, "border_width") == 0) {
-        cfg->border_width = clamp_int(atoi(value), 0, 50);
+        cfg->border_width = clamp_int(safe_atoi(value, 0), 0, 50);
     } else if (strcmp(key, "border_radius") == 0) {
-        cfg->border_radius = clamp_int(atoi(value), 0, 100);
+        cfg->border_radius = clamp_int(safe_atoi(value, 8), 0, 100);
     } else if (strcmp(key, "padding") == 0) {
-        cfg->padding = clamp_int(atoi(value), 0, 500);
+        cfg->padding = clamp_int(safe_atoi(value, 20), 0, 500);
     } else if (strcmp(key, "margin") == 0) {
-        cfg->margin = clamp_int(atoi(value), 0, 500);
+        cfg->margin = clamp_int(safe_atoi(value, 20), 0, 500);
     }
     // SSH terminal notifications
     else if (strcmp(key, "ssh_modes") == 0) {

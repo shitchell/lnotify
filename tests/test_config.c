@@ -301,6 +301,125 @@ void test_config_suite(void) {
         remove(path);
     }
 
+    // Test: safe integer parsing — overflow, non-numeric, empty use fallback
+    {
+        const char *path = "/tmp/lnotify_test_safe_atoi.conf";
+
+        // Overflow: value exceeds long range, should use fallback then clamp
+        {
+            FILE *f = fopen(path, "w");
+            fprintf(f, "default_timeout = 99999999999999\n");
+            fprintf(f, "font_size = 99999999999999\n");
+            fprintf(f, "border_width = 99999999999999\n");
+            fprintf(f, "border_radius = 99999999999999\n");
+            fprintf(f, "padding = 99999999999999\n");
+            fprintf(f, "margin = 99999999999999\n");
+            fclose(f);
+
+            lnotify_config cfg;
+            config_defaults(&cfg);
+            config_load(&cfg, path);
+
+            ASSERT_EQ(cfg.default_timeout, 5000,
+                "overflow default_timeout uses fallback 5000");
+            ASSERT_EQ(cfg.font_size, 16,
+                "overflow font_size uses fallback 16");
+            ASSERT_EQ(cfg.border_width, 0,
+                "overflow border_width uses fallback 0");
+            ASSERT_EQ(cfg.border_radius, 8,
+                "overflow border_radius uses fallback 8");
+            ASSERT_EQ(cfg.padding, 20,
+                "overflow padding uses fallback 20");
+            ASSERT_EQ(cfg.margin, 20,
+                "overflow margin uses fallback 20");
+
+            config_free(&cfg);
+        }
+
+        // Non-numeric: should use fallback
+        {
+            FILE *f = fopen(path, "w");
+            fprintf(f, "default_timeout = abc\n");
+            fprintf(f, "font_size = xyz\n");
+            fprintf(f, "border_width = !!\n");
+            fprintf(f, "border_radius = nope\n");
+            fprintf(f, "padding = ???\n");
+            fprintf(f, "margin = hello\n");
+            fclose(f);
+
+            lnotify_config cfg;
+            config_defaults(&cfg);
+            config_load(&cfg, path);
+
+            ASSERT_EQ(cfg.default_timeout, 5000,
+                "non-numeric default_timeout uses fallback 5000");
+            ASSERT_EQ(cfg.font_size, 16,
+                "non-numeric font_size uses fallback 16");
+            ASSERT_EQ(cfg.border_width, 0,
+                "non-numeric border_width uses fallback 0");
+            ASSERT_EQ(cfg.border_radius, 8,
+                "non-numeric border_radius uses fallback 8");
+            ASSERT_EQ(cfg.padding, 20,
+                "non-numeric padding uses fallback 20");
+            ASSERT_EQ(cfg.margin, 20,
+                "non-numeric margin uses fallback 20");
+
+            config_free(&cfg);
+        }
+
+        // Empty string: should use fallback
+        {
+            FILE *f = fopen(path, "w");
+            fprintf(f, "default_timeout =\n");
+            fprintf(f, "font_size =\n");
+            fprintf(f, "border_width =\n");
+            fprintf(f, "border_radius =\n");
+            fprintf(f, "padding =\n");
+            fprintf(f, "margin =\n");
+            fclose(f);
+
+            lnotify_config cfg;
+            config_defaults(&cfg);
+            config_load(&cfg, path);
+
+            ASSERT_EQ(cfg.default_timeout, 5000,
+                "empty default_timeout uses fallback 5000");
+            ASSERT_EQ(cfg.font_size, 16,
+                "empty font_size uses fallback 16");
+            ASSERT_EQ(cfg.border_width, 0,
+                "empty border_width uses fallback 0");
+            ASSERT_EQ(cfg.border_radius, 8,
+                "empty border_radius uses fallback 8");
+            ASSERT_EQ(cfg.padding, 20,
+                "empty padding uses fallback 20");
+            ASSERT_EQ(cfg.margin, 20,
+                "empty margin uses fallback 20");
+
+            config_free(&cfg);
+        }
+
+        // Trailing garbage: "123abc" should use fallback
+        {
+            FILE *f = fopen(path, "w");
+            fprintf(f, "default_timeout = 123abc\n");
+            fprintf(f, "font_size = 16xyz\n");
+            fclose(f);
+
+            lnotify_config cfg;
+            config_defaults(&cfg);
+            config_load(&cfg, path);
+
+            ASSERT_EQ(cfg.default_timeout, 5000,
+                "trailing garbage default_timeout uses fallback");
+            ASSERT_EQ(cfg.font_size, 16,
+                "trailing garbage font_size uses fallback");
+
+            config_free(&cfg);
+        }
+
+        remove(path);
+    }
+
     // Test: boolean parsing
     {
         const char *path = "/tmp/lnotify_test_bool.conf";

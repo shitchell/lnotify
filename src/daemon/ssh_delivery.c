@@ -249,7 +249,12 @@ bool ssh_check_fullscreen(const ssh_pty_info *pty,
         while (*p == ' ') p++;
         if (field == 4) {
             // This is tpgid (field 8 in 1-indexed, 5th after comm close)
-            tpgid = (pid_t)atoi(p);
+            char *endp;
+            errno = 0;
+            long val = strtol(p, &endp, 10);
+            if (endp == p || errno == ERANGE)
+                return false;
+            tpgid = (pid_t)val;
             break;
         }
         while (*p && *p != ' ') p++;
