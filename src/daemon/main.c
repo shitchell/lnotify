@@ -297,6 +297,7 @@ static void dispatch_notification(notification *notif, session_context *ctx) {
 }
 
 // Drain the queue: pop live notifications and dispatch through the resolver.
+// Skips the queue engine to avoid an infinite re-queue loop.
 static void drain_queue(session_context *ctx) {
     notification *n;
     int count = 0;
@@ -304,7 +305,31 @@ static void drain_queue(session_context *ctx) {
     while ((n = queue_pop_live(&g_queue)) != NULL) {
         log_info("draining queued notification: \"%s\"",
                  n->body ? n->body : "(none)");
-        dispatch_notification(n, ctx);
+
+        engine *eng = resolver_select(engines, engine_count, ctx, NULL);
+
+        // Skip the queue engine — re-queuing during drain is an infinite loop
+        if (eng && strcmp(eng->name, "queue") == 0)
+            eng = NULL;
+
+        if (!eng) {
+            // No real engine available — put it back and stop draining.
+            // The queue will be retried on the next VT switch.
+            log_info("drain: no non-queue engine available, re-queuing");
+            queue_push(&g_queue, n);
+            notification_free(n);
+            free(n);
+            break;
+        }
+
+        log_info("drain: dispatching via engine '%s'", eng->name);
+        bool ok = eng->render(n, ctx);
+        if (ok) {
+            g_active_engine = eng;
+        } else {
+            log_error("drain: engine '%s' render failed, dropping", eng->name);
+        }
+
         notification_free(n);
         free(n);
         count++;
@@ -411,7 +436,10 @@ int main(int argc, char *argv[]) {
     }
 
     // Initialize notification queue
-    queue_init(&g_queue);
+    if (queue_init(&g_queue) < 0) {
+        fprintf(stderr, "error: queue mutex init failed\n");
+        return 1;
+    }
 
     // Determine socket path: CLI --socket > config socket_path > auto-detect
     const char *resolved_socket;

@@ -24,8 +24,9 @@ typedef struct {
     pthread_mutex_t lock;
 } notif_queue;
 
-// Initialize a queue (must be called before use)
-void queue_init(notif_queue *q);
+// Initialize a queue (must be called before use).
+// Returns 0 on success, -1 if mutex init fails.
+int queue_init(notif_queue *q);
 
 // Destroy a queue, freeing all queued notifications
 void queue_destroy(notif_queue *q);

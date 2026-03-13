@@ -40,11 +40,13 @@ static void node_replace(notif_node *node, const notification *n) {
     node->notif.ts_mono     = n->ts_mono;
 }
 
-void queue_init(notif_queue *q) {
+int queue_init(notif_queue *q) {
     q->head  = NULL;
     q->tail  = NULL;
     q->count = 0;
-    pthread_mutex_init(&q->lock, NULL);
+    if (pthread_mutex_init(&q->lock, NULL) != 0)
+        return -1;
+    return 0;
 }
 
 void queue_destroy(notif_queue *q) {

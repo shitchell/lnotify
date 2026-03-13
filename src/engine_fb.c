@@ -46,7 +46,7 @@ static int           verify_y[VERIFY_SAMPLE_COUNT];
 // Defense thread
 static pthread_t    defense_thread;
 static _Atomic bool defense_running = false;
-static bool         defense_stop    = false;
+static _Atomic bool defense_stop    = false;
 
 // Notification info the defense thread needs for re-render and queue fallback
 static notification defense_notif;          // deep copy
@@ -189,8 +189,8 @@ static void fb_compute_geometry(const notification *notif,
                                  const lnotify_config *cfg) {
     fb_font_metrics m = fb_calc_font_metrics(cfg);
 
-    int title_w = g_font.text_width(notif->title, m.title_px);
-    int body_w  = g_font.text_width(notif->body, m.body_px);
+    int title_w = notif->title ? g_font.text_width(notif->title, m.title_px) : 0;
+    int body_w  = notif->body  ? g_font.text_width(notif->body, m.body_px)  : 0;
     int content_w = title_w > body_w ? title_w : body_w;
     int content_h = 0;
     if (notif->title) {
@@ -552,6 +552,11 @@ static bool fb_render(const notification *notif,
     fb_width  = (int)vinfo.xres;
     fb_height = (int)vinfo.yres;
     fb_stride = (int)finfo.line_length;
+
+    if (fb_height > 0 && (size_t)fb_stride > SIZE_MAX / (size_t)fb_height) {
+        log_error("engine_fb: framebuffer size overflow");
+        goto cleanup;
+    }
     fb_map_size = (size_t)fb_stride * fb_height;
 
     log_debug("engine_fb: screen %dx%d, stride=%d, bpp=%d",

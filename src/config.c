@@ -1,5 +1,6 @@
 #include "config.h"
 #include "log.h"
+#include "strutil.h"
 
 #include <ctype.h>
 #include <errno.h>
@@ -20,15 +21,6 @@ static char *trim(char *s) {
     char *end = s + strlen(s) - 1;
     while (end > s && isspace((unsigned char)*end)) *end-- = '\0';
     return s;
-}
-
-// Replace a heap-allocated string field. Frees old value only if strdup
-// succeeds, so that OOM doesn't destroy the existing value.
-static void set_str(char **field, const char *value) {
-    char *copy = strdup(value);
-    if (!copy) return;  // OOM: keep existing value
-    free(*field);
-    *field = copy;
 }
 
 // Parse an integer from a string, returning fallback on any error (overflow,
@@ -146,11 +138,11 @@ static void config_set(lnotify_config *cfg, const char *key, const char *value) 
     if (strcmp(key, "default_timeout") == 0) {
         cfg->default_timeout = clamp_int(safe_atoi(value, 5000), 100, 300000);
     } else if (strcmp(key, "position") == 0) {
-        set_str(&cfg->position, value);
+        (void)replace_str(&cfg->position, value);
     } else if (strcmp(key, "font_name") == 0) {
-        set_str(&cfg->font_name, value);
+        (void)replace_str(&cfg->font_name, value);
     } else if (strcmp(key, "font_path") == 0) {
-        set_str(&cfg->font_path, value);
+        (void)replace_str(&cfg->font_path, value);
     } else if (strcmp(key, "font_size") == 0) {
         cfg->font_size = clamp_int(safe_atoi(value, 16), 8, 200);
     }
@@ -175,23 +167,23 @@ static void config_set(lnotify_config *cfg, const char *key, const char *value) 
     }
     // SSH terminal notifications
     else if (strcmp(key, "ssh_modes") == 0) {
-        set_str(&cfg->ssh_modes, value);
+        (void)replace_str(&cfg->ssh_modes, value);
     } else if (strcmp(key, "ssh_fullscreen_apps") == 0) {
-        set_str(&cfg->ssh_fullscreen_apps, value);
+        (void)replace_str(&cfg->ssh_fullscreen_apps, value);
     } else if (strcmp(key, "ssh_notify_over_fullscreen") == 0) {
         cfg->ssh_notify_over_fullscreen = parse_bool(value);
     } else if (strcmp(key, "ssh_groups") == 0) {
-        set_str(&cfg->ssh_groups, value);
+        (void)replace_str(&cfg->ssh_groups, value);
     } else if (strcmp(key, "ssh_users") == 0) {
-        set_str(&cfg->ssh_users, value);
+        (void)replace_str(&cfg->ssh_users, value);
     }
     // Daemon
     else if (strcmp(key, "socket_path") == 0) {
-        set_str(&cfg->socket_path, value);
+        (void)replace_str(&cfg->socket_path, value);
     }
     // Internal
     else if (strcmp(key, "engine_priorities") == 0) {
-        set_str(&cfg->engine_priorities, value);
+        (void)replace_str(&cfg->engine_priorities, value);
     }
     // Unknown
     else {
