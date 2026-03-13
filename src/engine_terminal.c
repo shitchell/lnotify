@@ -284,21 +284,21 @@ bool terminal_render_overlay(int pty_fd, const notification *notif,
     // Top border: +---------+
     n += snprintf(buf + n, sizeof(buf) - (size_t)n,
                   "\033[1;%dH\033[1;44;37m", start_col);
-    n += snprintf(buf + n, sizeof(buf) - (size_t)n, "+");
+    n += snprintf(buf + n, sizeof(buf) - (size_t)n, "╭");
     for (int i = 0; i < content_width; i++)
-        n += snprintf(buf + n, sizeof(buf) - (size_t)n, "-");
-    n += snprintf(buf + n, sizeof(buf) - (size_t)n, "+\033[0m");
+        n += snprintf(buf + n, sizeof(buf) - (size_t)n, "─");
+    n += snprintf(buf + n, sizeof(buf) - (size_t)n, "╮\033[0m");
 
     // Line 1
     n += snprintf(buf + n, sizeof(buf) - (size_t)n,
-                  "\033[2;%dH\033[1;44;37m|%-*.*s|\033[0m",
+                  "\033[2;%dH\033[1;44;37m│%-*.*s│\033[0m",
                   start_col, content_width, content_width, line1);
 
     // Line 2 (if there is a body and title)
     int cur_row = 3;
     if (line2_len > 0) {
         n += snprintf(buf + n, sizeof(buf) - (size_t)n,
-                      "\033[%d;%dH\033[44;37m|%-*.*s|\033[0m",
+                      "\033[%d;%dH\033[44;37m│%-*.*s│\033[0m",
                       cur_row, start_col,
                       content_width, content_width, line2);
         cur_row++;
@@ -306,10 +306,10 @@ bool terminal_render_overlay(int pty_fd, const notification *notif,
 
     // Bottom border
     n += snprintf(buf + n, sizeof(buf) - (size_t)n,
-                  "\033[%d;%dH\033[1;44;37m+", cur_row, start_col);
+                  "\033[%d;%dH\033[1;44;37m╰", cur_row, start_col);
     for (int i = 0; i < content_width; i++)
-        n += snprintf(buf + n, sizeof(buf) - (size_t)n, "-");
-    n += snprintf(buf + n, sizeof(buf) - (size_t)n, "+\033[0m");
+        n += snprintf(buf + n, sizeof(buf) - (size_t)n, "─");
+    n += snprintf(buf + n, sizeof(buf) - (size_t)n, "╯\033[0m");
 
     // Restore cursor position
     n += snprintf(buf + n, sizeof(buf) - (size_t)n, "\033[u");
