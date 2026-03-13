@@ -111,10 +111,10 @@ static void fb_draw_rounded_rect(int rx, int ry, int rw, int rh,
     clip_rect cr = clip_to_bounds(rx, ry, rw, rh, fb_width, fb_height);
 
     for (int py = cr.y0; py < cr.y1; py++) {
-        uint8_t *row_ptr = fb_map + py * fb_stride;
+        uint8_t *row_ptr = fb_map + (size_t)py * fb_stride;
         for (int px = cr.x0; px < cr.x1; px++) {
             if (point_in_rounded_rect(px, py, rx, ry, rw, rh, radius)) {
-                uint8_t *pixel = row_ptr + px * 4;
+                uint8_t *pixel = row_ptr + (size_t)px * 4;
                 memcpy(pixel, bgra, 4);
             }
         }
@@ -133,7 +133,7 @@ static void fb_draw_rounded_border(int rx, int ry, int rw, int rh,
     int inner_radius = radius > border_w ? radius - border_w : 0;
 
     for (int py = cr.y0; py < cr.y1; py++) {
-        uint8_t *row_ptr = fb_map + py * fb_stride;
+        uint8_t *row_ptr = fb_map + (size_t)py * fb_stride;
         for (int px = cr.x0; px < cr.x1; px++) {
             bool in_outer = point_in_rounded_rect(px, py, rx, ry, rw, rh,
                                                    radius);
@@ -144,7 +144,7 @@ static void fb_draw_rounded_border(int rx, int ry, int rw, int rh,
                                                    rh - 2 * border_w,
                                                    inner_radius);
             if (in_outer && !in_inner) {
-                uint8_t *pixel = row_ptr + px * 4;
+                uint8_t *pixel = row_ptr + (size_t)px * 4;
                 memcpy(pixel, bgra, 4);
             }
         }
@@ -264,7 +264,7 @@ static void fb_save_region(void) {
     for (int row = 0; row < h; row++) {
         int sy = saved_geom.y + row;
         if (sy < 0 || sy >= fb_height) continue;
-        const uint8_t *src = fb_map + sy * fb_stride + saved_geom.x * 4;
+        const uint8_t *src = fb_map + (size_t)sy * fb_stride + (size_t)saved_geom.x * 4;
         uint8_t *dst = saved_region + (size_t)row * row_bytes;
         int copy_w = w;
         if (saved_geom.x + copy_w > fb_width) {
@@ -285,7 +285,7 @@ static void fb_restore_region(void) {
     for (int row = 0; row < h; row++) {
         int sy = saved_geom.y + row;
         if (sy < 0 || sy >= fb_height) continue;
-        uint8_t *dst = fb_map + sy * fb_stride + saved_geom.x * 4;
+        uint8_t *dst = fb_map + (size_t)sy * fb_stride + (size_t)saved_geom.x * 4;
         const uint8_t *src = saved_region + (size_t)row * row_bytes;
         int copy_w = w;
         if (saved_geom.x + copy_w > fb_width) {
@@ -345,7 +345,7 @@ static void fb_record_verify_samples(void) {
         verify_y[idx] = py;
 
         // Read the current pixel
-        const uint8_t *pixel = fb_map + py * fb_stride + px * 4;
+        const uint8_t *pixel = fb_map + (size_t)py * fb_stride + (size_t)px * 4;
         verify_samples[idx][0] = pixel[0];
         verify_samples[idx][1] = pixel[1];
         verify_samples[idx][2] = pixel[2];
@@ -363,7 +363,7 @@ static bool fb_verify_visible(void) {
         int py = verify_y[i];
         if (px < 0 || py < 0 || px >= fb_width || py >= fb_height) continue;
 
-        const uint8_t *pixel = fb_map + py * fb_stride + px * 4;
+        const uint8_t *pixel = fb_map + (size_t)py * fb_stride + (size_t)px * 4;
         if (pixel[0] == verify_samples[i][0] &&
             pixel[1] == verify_samples[i][1] &&
             pixel[2] == verify_samples[i][2] &&

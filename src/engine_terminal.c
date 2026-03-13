@@ -280,19 +280,26 @@ bool terminal_render_overlay(int pty_fd, const notification *notif,
 
     // Save cursor position
     n += snprintf(buf + n, sizeof(buf) - (size_t)n, "\033[s");
+    if (n >= (int)sizeof(buf)) { n = (int)sizeof(buf) - 1; goto overlay_done; }
 
     // Top border: +---------+
     n += snprintf(buf + n, sizeof(buf) - (size_t)n,
                   "\033[1;%dH\033[1;44;37m", start_col);
+    if (n >= (int)sizeof(buf)) { n = (int)sizeof(buf) - 1; goto overlay_done; }
     n += snprintf(buf + n, sizeof(buf) - (size_t)n, "╭");
-    for (int i = 0; i < content_width; i++)
+    if (n >= (int)sizeof(buf)) { n = (int)sizeof(buf) - 1; goto overlay_done; }
+    for (int i = 0; i < content_width; i++) {
         n += snprintf(buf + n, sizeof(buf) - (size_t)n, "─");
+        if (n >= (int)sizeof(buf)) { n = (int)sizeof(buf) - 1; goto overlay_done; }
+    }
     n += snprintf(buf + n, sizeof(buf) - (size_t)n, "╮\033[0m");
+    if (n >= (int)sizeof(buf)) { n = (int)sizeof(buf) - 1; goto overlay_done; }
 
     // Line 1
     n += snprintf(buf + n, sizeof(buf) - (size_t)n,
                   "\033[2;%dH\033[1;44;37m│%-*.*s│\033[0m",
                   start_col, content_width, content_width, line1);
+    if (n >= (int)sizeof(buf)) { n = (int)sizeof(buf) - 1; goto overlay_done; }
 
     // Line 2 (if there is a body and title)
     int cur_row = 3;
@@ -301,22 +308,28 @@ bool terminal_render_overlay(int pty_fd, const notification *notif,
                       "\033[%d;%dH\033[44;37m│%-*.*s│\033[0m",
                       cur_row, start_col,
                       content_width, content_width, line2);
+        if (n >= (int)sizeof(buf)) { n = (int)sizeof(buf) - 1; goto overlay_done; }
         cur_row++;
     }
 
     // Bottom border
     n += snprintf(buf + n, sizeof(buf) - (size_t)n,
                   "\033[%d;%dH\033[1;44;37m╰", cur_row, start_col);
-    for (int i = 0; i < content_width; i++)
+    if (n >= (int)sizeof(buf)) { n = (int)sizeof(buf) - 1; goto overlay_done; }
+    for (int i = 0; i < content_width; i++) {
         n += snprintf(buf + n, sizeof(buf) - (size_t)n, "─");
+        if (n >= (int)sizeof(buf)) { n = (int)sizeof(buf) - 1; goto overlay_done; }
+    }
     n += snprintf(buf + n, sizeof(buf) - (size_t)n, "╯\033[0m");
+    if (n >= (int)sizeof(buf)) { n = (int)sizeof(buf) - 1; goto overlay_done; }
 
     // Restore cursor position
     n += snprintf(buf + n, sizeof(buf) - (size_t)n, "\033[u");
+    if (n >= (int)sizeof(buf)) { n = (int)sizeof(buf) - 1; goto overlay_done; }
 
-    if (n >= (int)sizeof(buf)) {
-        log_error("ssh: overlay buffer overflow");
-        return false;
+overlay_done:
+    if (n >= (int)sizeof(buf) - 1) {
+        log_error("ssh: overlay buffer overflow (truncated)");
     }
 
     ssize_t w = write(pty_fd, buf, (size_t)n);
